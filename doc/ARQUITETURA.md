@@ -50,7 +50,9 @@ src/
     debris.ts             pedaços que quicam e somem (tábuas, cacos, cartuchos, gibs)
     leaves.ts             folhas que flutuam, pousam e somem
     effects.ts            receitas de juice (poeira, faíscas, muzzle, sangue, explosão, respingo…)
-  audio/sfx.ts            todos os sons sintetizados em WebAudio
+  audio/sfx.ts            todos os sons sintetizados em WebAudio (roteamento: HRTF, abafamento, reverb, eco)
+  audio/music.ts          trilha procedural com camadas calma/tensa guiadas pelo perigo
+  audio/dsp.ts            DSP puro testável: resposta de impulso, Karplus–Strong, harmonia e melodias
   ui/                     HUD, overlay (título/pausa/morte), ícones SVG desenhados à mão
   debug/testApi.ts        window.__game (automação e screenshots)
 ```
@@ -80,6 +82,18 @@ src/
 - **Personagens vivos**: círculos no plano XZ empurrados para fora dos estáticos, lago e limites.
 - Balas: `PhysicsWorld.raycast` testa chão, estáticos, props, partículas de ragdolls e cápsulas
   de personagens (com esfera de cabeça para headshot).
+
+## Áudio
+
+- Cada som passa por `Sfx.out()`: atenuação por distância → (filtro passa-baixa se uma parede
+  estiver entre o som e o ouvinte) → `PannerNode` HRTF (direção esquerda/direita, sempre "à
+  frente", para não confundir numa câmera de cima) → bus de efeitos. Em paralelo vai um envio
+  para o reverb (convolver com IR gerada em `dsp.ts`) e, para sons altos, ecos atrasados pelo
+  caminho extra até o celeiro/casa, panoramizados a partir da parede.
+- Música (`music.ts`): agendador com lookahead de 180 ms em semicolcheias a 86 BPM. Camada
+  calma (violão Karplus–Strong renderizado offline, kalimba, baixo, shaker) e camada tensa
+  (Ré menor, baixo serrilhado pulsante, bumbo/caixa/chimbal, viradas). `Game` mede o perigo
+  (zumbis alertas perto) e chama `setIntensity`; o modo troca na virada do compasso com histerese.
 
 ## Tempo e juice
 

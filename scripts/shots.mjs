@@ -26,7 +26,7 @@ await new Promise((resolve, reject) => {
 });
 
 const browser = await chromium.launch({
-  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl'],
+  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--autoplay-policy=no-user-gesture-required'],
 });
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 const logs = [];
@@ -47,6 +47,23 @@ const shot = async (name) => {
 };
 
 const scenarios = {
+  async audio() {
+    await g(() => __game.audio.unlock());
+    await page.waitForTimeout(800);
+    console.log('audio state', JSON.stringify(await g(() => __game.audio.state())));
+    const quiet = await g(() => __game.audio.level());
+    await g(() => __game.audio.shots());
+    await page.waitForTimeout(120);
+    const loud = await g(() => __game.audio.level());
+    console.log('level before/after shots', quiet.toFixed(4), loud.toFixed(4));
+    await g(() => __game.audio.intensity(1));
+    await page.waitForTimeout(6500);
+    console.log('music after danger', JSON.stringify(await g(() => __game.audio.state())));
+    await g(() => __game.audio.intensity(0));
+    await g(() => __game.audio.stinger('clear'));
+    await page.waitForTimeout(500);
+    console.log('level with stinger', (await g(() => __game.audio.level())).toFixed(4));
+  },
   async boom2() {
     // centered explosion with a survivor that gets knocked down and stands back up
     await g(() => {

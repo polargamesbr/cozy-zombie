@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Game } from '../game/Game';
 import type { ZombieType } from '../entities/zombie';
 import type { WeaponId } from '../entities/weapons';
+import { sfx } from '../audio/sfx';
 
 /**
  * `window.__game` – a small automation surface used by the screenshot script (and handy in the
@@ -76,6 +77,22 @@ export function installTestApi(game: Game): void {
     },
     godMode(): void {
       game.player.invincible = true;
+    },
+    /** Audio smoke test helpers. */
+    audio: {
+      unlock: () => sfx.unlock(),
+      level: () => sfx.level(),
+      state: () => ({ ready: sfx.ready, mode: sfx.music?.currentMode ?? null }),
+      intensity: (v: number) => sfx.music?.setIntensity(v),
+      shots: () => {
+        const p = game.player.pos.clone();
+        sfx.pistol(p.clone().add(new THREE.Vector3(3, 0, 0)));
+        sfx.shotgun(p.clone().add(new THREE.Vector3(-4, 0, 2)));
+        sfx.explosion(p.clone().add(new THREE.Vector3(8, 0, -6)));
+        sfx.groan(p.clone().add(new THREE.Vector3(2, 0, 2)));
+        sfx.woodBreak(p.clone().add(new THREE.Vector3(-2, 0, -2)));
+      },
+      stinger: (k: 'clear' | 'death') => sfx.music?.stinger(k),
     },
     /** Debug: what is under a screen pixel? */
     pick(px: number, py: number) {

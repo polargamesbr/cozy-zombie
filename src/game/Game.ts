@@ -120,7 +120,15 @@ export class Game implements GameCtx {
     const sp = LAYOUT.playerSpawn;
     this.player = new Player(this, this.combat, sp.x, sp.z);
     this.player.yaw = 1.2;
+    // audio hooks: walls muffle sounds, the barn and house throw echoes back
+    sfx.occluded = (p) => !this.physics.segmentClear(this.cam.target.x, this.cam.target.z, p.x, p.z, 1.2);
+    sfx.reflectors = [
+      new THREE.Vector3(LAYOUT.barn.x, 2.5, LAYOUT.barn.z + LAYOUT.barn.d / 2),
+      new THREE.Vector3(LAYOUT.house.x, 1.8, LAYOUT.house.z + LAYOUT.house.d / 2),
+      new THREE.Vector3(LAYOUT.barn.x - LAYOUT.barn.w / 2, 2.5, LAYOUT.barn.z),
+    ];
     this.player.onDeath = () => {
+      sfx.music?.stinger('death');
       this.state = 'dead';
       this.deadT = 0;
     };
@@ -469,6 +477,7 @@ export class Game implements GameCtx {
     // --- objective / flow
     if (this.state === 'playing' && this.total > 0 && this.killed >= this.total && this.clearedT < 0) {
       this.clearedT = 0;
+      sfx.music?.stinger('clear');
       this.hud.toast('Fazenda limpa! ✿', 3);
       this.hud.setObjective(this.objectiveText(), `${this.killed}/${this.total}`);
       this.spawnPickup('pie', this.player.pos.clone().add(new THREE.Vector3(1.5, 0.3, 1.5)));
@@ -490,6 +499,18 @@ export class Game implements GameCtx {
     this.cam.update(follow, look, rot, inp.orbitDX, inp.wheel, realDt);
     this.lighting.update(this.cam.target);
     sfx.setListener(this.cam.target, this.cam.right);
+    // music follows the danger: alerted zombies nearby push it toward the tense mix
+    if (sfx.music) {
+      let danger = 0;
+      if (this.player.alive && this.state === 'playing') {
+        for (const z of this.zombies) {
+          if (!z.alive || !z.alerted) continue;
+          const d = Math.hypot(z.pos.x - this.player.pos.x, z.pos.z - this.player.pos.z);
+          if (d < 22) danger += d < 10 ? 0.55 : 0.3;
+        }
+      }
+      sfx.music.setIntensity(Math.min(1, danger));
+    }
     // hurt / flash overlays
     if (this.player.hp < this.lastHp) this.hurtV = 1;
     this.lastHp = this.player.hp;

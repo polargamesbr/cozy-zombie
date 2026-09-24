@@ -22,10 +22,10 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
 ## v0.2 — Rumo ao "AAA estilizado" (ordem recomendada)
 
 1. **Som e música** (maior ganho percebido por esforço)
-   - [ ] Reverb por convolução com resposta de impulso gerada por código (ar livre / perto do celeiro)
-   - [ ] Tiros em camadas (estalo + corpo + cauda + eco atrasado), variação de pitch por disparo
-   - [ ] Música procedural: tema cozy (violão/marimba sintetizados) que cruza para uma versão tensa no combate
-   - [ ] Panner HRTF, abafamento de sons atrás de paredes
+   - [x] Reverb por convolução com resposta de impulso gerada por código + eco direcional vindo do celeiro/casa
+   - [x] Tiros em camadas (estalo + corpo + thump + mecânica + cauda + eco), variação de ±6% por disparo
+   - [x] Música procedural: violão (Karplus–Strong) + kalimba em Ré maior que vira Ré menor com bateria e baixo pulsante no combate; vinhetas de vitória e morte
+   - [x] Panner HRTF, abafamento de sons atrás de paredes
 2. **Luz e pós-processamento**
    - [ ] AO suave (GTAO) + rim light nos personagens para destacar silhuetas
    - [ ] Raios de sol de fim de tarde (god rays em pós) e névoa de altura
