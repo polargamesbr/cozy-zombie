@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "shots": "node scripts/shots.mjs"
+    "shots": "node scripts/shots.mjs",
+    "build:single": "vite build && node scripts/inline.mjs"
   },
   "dependencies": {
     "three": "^0.186.0"
