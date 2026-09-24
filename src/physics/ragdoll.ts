@@ -15,6 +15,8 @@ export const J = {
   footR: 8,
 } as const;
 export const JOINT_COUNT = 9;
+/** Height of the pond surface. */
+export const WATER_Y = 0.05;
 
 export interface Link {
   a: number;
@@ -88,6 +90,12 @@ export class Ragdoll {
   breakSpeed = 6.5;
   /** Gameplay object this ragdoll belongs to (a Zombie or the Player). */
   owner: unknown = null;
+  /** Water depth under a point (0 = dry land). Water surface is at WATER_Y. */
+  water: ((x: number, z: number) => number) | null = null;
+  /** 1 = floats, 0 = sinks like a stone (bodies sink after a while). */
+  buoyancy = 1;
+  /** Particles currently (partly) under water. */
+  submerged = 0;
 
   constructor(radii: number[], masses: number[]) {
     this.n = radii.length;
@@ -194,11 +202,26 @@ export class Ragdoll {
     const g = gravity * dt * dt;
     const maxStep = 26 * dt;
     let maxMove = 0;
+    this.submerged = 0;
     for (let i = 0; i < this.n; i++) {
       const ix = i * 3;
       let vx = (p[ix] - o[ix]) * 0.999;
       let vy = (p[ix + 1] - o[ix + 1]) * 0.999;
       let vz = (p[ix + 2] - o[ix + 2]) * 0.999;
+      // water: heavy drag and buoyancy on the submerged part of each particle
+      let lift = 0;
+      if (this.water && this.water(p[ix], p[ix + 2]) > 0) {
+        const r = this.r[i];
+        const sub = Math.min(1, Math.max(0, (WATER_Y + r - p[ix + 1]) / (2 * r)));
+        if (sub > 0) {
+          this.submerged++;
+          const drag = Math.max(0.5, 1 - 7 * dt * sub);
+          vx *= drag;
+          vy *= drag;
+          vz *= drag;
+          lift = -g * 1.7 * sub * this.buoyancy;
+        }
+      }
       const sp = Math.sqrt(vx * vx + vy * vy + vz * vz);
       if (sp > maxStep) {
         const k = maxStep / sp;
@@ -211,7 +234,7 @@ export class Ragdoll {
       o[ix + 1] = p[ix + 1];
       o[ix + 2] = p[ix + 2];
       p[ix] += vx;
-      p[ix + 1] += vy + g;
+      p[ix + 1] += vy + g + lift;
       p[ix + 2] += vz;
       this.pre[ix] = vx / dt;
       this.pre[ix + 1] = (vy + g) / dt;
@@ -283,9 +306,10 @@ export class Ragdoll {
     for (let i = 0; i < this.n; i++) {
       const ix = i * 3;
       const r = this.r[i];
-      // ground
-      if (p[ix + 1] < r) {
-        p[ix + 1] = r;
+      // ground (or the pond bottom)
+      const floor = this.water ? -this.water(p[ix], p[ix + 2]) : 0;
+      if (p[ix + 1] < r + floor) {
+        p[ix + 1] = r + floor;
         this.contact[i] = 1;
         this.cn[ix] = 0;
         this.cn[ix + 1] = 1;

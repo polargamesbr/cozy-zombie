@@ -147,3 +147,12 @@ export function pondPush(pos: { x: number; z: number }, radius: number): boolean
   pos.z = p.z + dz * s;
   return true;
 }
+
+/** Depth of the pond bottom under a point (0 outside the water). */
+export function pondDepth(x: number, z: number): number {
+  const p = LAYOUT.pond;
+  const dx = (x - p.x) / (p.rx - 0.2);
+  const dz = (z - p.z) / (p.rz - 0.2);
+  const k = dx * dx + dz * dz;
+  return k >= 1 ? 0 : 0.95 * Math.sqrt(1 - k);
+}

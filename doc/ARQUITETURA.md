@@ -43,7 +43,8 @@ src/
     player.ts             movimento, esquiva, armas, recarga, animação procedural, dano
     zombie.ts             IA (vagar/perseguir/antecipar/investir/cambalear/derrubado/levantar), mancar/rastejar,
                           braço arrancado, morte
-    combat.ts             hitscan: pellets, acúmulo por zumbi, reações por superfície, juice global
+    combat.ts             hitscan: pellets, acúmulo por zumbi, reações por superfície, juice global; chute
+    dynamite.ts           dinamite (voo balístico exato, quica, pavio) + arco previsto (ThrowArc)
     weapons.ts            definições das armas + malhas das armas
     pickup.ts             munição e torta
   fx/
@@ -98,6 +99,9 @@ src/
 - **Corpos rígidos** (props): impulsos sequenciais contra chão/estáticos com pontos amostrados
   (cantos de caixa, ponto mais baixo analítico do aro de cilindros → rolamento correto).
 - **Personagens vivos**: círculos no plano XZ empurrados para fora dos estáticos, lago e limites.
+- **Água**: `PhysicsWorld.water` (profundidade do lago) faz o chão dos ragdolls afundar no lago;
+  partículas submersas recebem arrasto forte e empuxo (`Ragdoll.buoyancy`, que o zumbi zera aos
+  poucos para o corpo afundar). Zumbi derrubado que cai na água se afoga.
 - Balas: `PhysicsWorld.raycast` testa chão, estáticos, props, partículas de ragdolls e cápsulas
   de personagens (com esfera de cabeça para headshot). `Zombie.classify()` diz a parte atingida
   (cabeça, tronco, perna E/D, braço E/D); `Combat` soma o dano por parte: pernas fazem mancar e
@@ -118,8 +122,20 @@ src/
 ## Tempo e juice
 
 `Game.hitstop(s)` congela o mundo (escala 0.03) mantendo câmera/shake em tempo real.
-`Game.slowmo(escala, s)` para a morte do jogador. `Game.explode()` centraliza efeitos, dano,
-impulsos, reação de cenário, rajada na grama e barulho.
+`Game.slowmo(escala, s)` para a morte do jogador e a kill-cam (último zumbi da horda: câmera
+lenta + `CameraRig.focus` puxando para o corpo + barras de cinema via CSS `body.killcam`).
+`Game.explode(pos, força, fonte)` centraliza efeitos, dano, impulsos, reação de cenário, rajada
+na grama e barulho; a fonte (`propane`/`dynamite`/`truck`) vira o rótulo de abate
+(`Game.feat()` → `Hud.feat()`, texto que salta da posição projetada na tela).
+
+## Desempenho e qualidade
+
+`RenderPipeline.setQuality(0..3)` (Ultra/Alta/Média/Baixa) troca escala de resolução
+(≤1.75 / ≤1.25 / 1 / 0.75), MSAA, AO + névoa (só Ultra/Alta), bloom (até Média); `Game.applyQuality`
+também muda o shadow map (2048/1024) e a densidade da grama (instâncias em ordem aleatória:
+basta reduzir `count`). `Game.trackPerf` mede o FPS médio a cada ~2 s (ignorando engasgos
+> 250 ms) e desce um nível se ficar < 48; `P` escolhe manualmente (salvo em `localStorage`),
+`I` mostra o FPS. O shader da grama usa transposta/escala em vez de `inverse(mat3)` por vértice.
 
 ## Testes e QA visual
 
@@ -128,10 +144,11 @@ impulsos, reação de cenário, rajada na grama e barulho.
 - `npm run build && npm run shots -- overview combat explosion` — abre o jogo no Chromium
   headless (SwiftShader) em `?test` (tempo manual e seed fixa) e salva screenshots em `shots/`.
   Cenários disponíveis em `scripts/shots.mjs` (overview, wide, barn, pond, closeup, combat,
-  explosion, chase, title, pick, limbs, crawl, crawlclose, faces, death, dodge…).
+  explosion, chase, title, pick, limbs, crawl, crawlclose, faces, death, dodge, kick, dynamite,
+  killcam, truck…).
 - `window.__game` (em qualquer modo): `advance(s)`, `teleport(x,z)`, `aim(x,z)`, `fire()`,
   `spawn(tipo,x,z)`, `explode(x,z)`, `camera({yaw,zoom})`, `hit(i,parte,dano)`, `tearArm(i,lado)`,
-  `express(i,rosto,s)`, `pick(px,py)`, `state()`…
+  `express(i,rosto,s)`, `kick()`, `holdThrow(x,z)`/`releaseThrow()`, `pick(px,py)`, `state()`…
 
 ## Como adicionar conteúdo
 

@@ -20,6 +20,9 @@ export interface GrassPusher {
   readonly pushRadius: number;
 }
 
+/** What blew up (for the kill label). */
+export type BlastSource = 'propane' | 'dynamite' | 'truck';
+
 /** Shared services handed to every world object and entity. */
 export interface GameCtx {
   readonly scene: THREE.Scene;
@@ -34,7 +37,9 @@ export interface GameCtx {
   hitstop(seconds: number): void;
   slowmo(scale: number, seconds: number): void;
   shake(trauma: number): void;
-  explode(pos: THREE.Vector3, power: number): void;
+  explode(pos: THREE.Vector3, power: number, source?: BlastSource): void;
+  /** Stylish kill label popping out of a world position ("AFOGADO!", "KABUM!"). */
+  feat(text: string, pos?: THREE.Vector3): void;
   add(u: Updatable): void;
   addNoiseListener(l: NoiseListener): void;
   addPusher(p: GrassPusher): void;
@@ -42,5 +47,5 @@ export interface GameCtx {
   /** Ground height (the pond is a shallow dip). */
   groundAt(x: number, z: number): number;
   /** Spawn a pickup (ammo / health). */
-  spawnPickup(kind: 'ammoPistol' | 'ammoShotgun' | 'pie', pos: THREE.Vector3): void;
+  spawnPickup(kind: 'ammoPistol' | 'ammoShotgun' | 'pie' | 'dynamite', pos: THREE.Vector3): void;
 }

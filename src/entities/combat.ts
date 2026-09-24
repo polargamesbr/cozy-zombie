@@ -9,6 +9,7 @@ import { Zombie, type HitParts } from './zombie';
 import { inPond, LAYOUT } from '../world/layout';
 import type { Pond } from '../world/pond';
 import { sfx } from '../audio/sfx';
+import { PAL } from '../render/palette';
 
 interface Accum {
   damage: number;
@@ -123,6 +124,68 @@ export class Combat {
       const p = muzzleVis.clone().addScaledVector(flat, 0.6);
       GLOBAL_UNIFORMS.uGust.value.set(p.x, 0, p.z, ctx.time);
       GLOBAL_UNIFORMS.uGustStrength.value = 0.4;
+    }
+    return { hits, kills };
+  }
+
+  /**
+   * Front kick: a cone in front of `from`. Standing zombies get knocked flying (into fences, the
+   * pond, each other), bodies get punted, props get booted.
+   */
+  kick(from: THREE.Vector3, fwd: THREE.Vector3, self: CharacterBody): { hits: number; kills: number } {
+    const ctx = this.ctx;
+    const reach = 1.45;
+    let hits = 0;
+    let kills = 0;
+    let flesh = false;
+    const to = new THREE.Vector3();
+    // bodies already on the floor (not the ones this kick is about to knock down)
+    const corpses = [...ctx.physics.ragdolls];
+    for (const ch of [...ctx.physics.characters]) {
+      if (ch === self || !ch.alive) continue;
+      to.set(ch.x - from.x, 0, ch.z - from.z);
+      const d = to.length();
+      if (d - ch.radius > reach || d < 1e-4) continue;
+      to.divideScalar(d);
+      if (to.dot(fwd) < 0.3) continue;
+      const owner = ch.owner;
+      if (!(owner instanceof Zombie)) continue;
+      const dir = fwd.clone().multiplyScalar(0.65).addScaledVector(to, 0.35).normalize();
+      const point = new THREE.Vector3(ch.x - to.x * ch.radius, from.y + 0.5 * owner.model.s, ch.z - to.z * ch.radius);
+      if (owner.kicked(dir, point)) kills++;
+      hits++;
+      flesh = true;
+    }
+    for (const rd of corpses) {
+      if (rd.owner === self.owner) continue;
+      let bd = Infinity;
+      for (let i = 0; i < rd.n; i++) {
+        to.set(rd.p[i * 3] - from.x, 0, rd.p[i * 3 + 2] - from.z);
+        const d = to.length();
+        if (d < 1e-4 || to.dot(fwd) / d < 0.2) continue;
+        bd = Math.min(bd, d);
+      }
+      if (bd > reach + 0.2) continue;
+      for (let i = 0; i < rd.n; i++) rd.addVelocity(i, fwd.x * 6.5, 3 + (i === 0 ? 1.5 : 0), fwd.z * 6.5);
+      const c = rd.center(new THREE.Vector3());
+      ctx.fx.bloodBurst(c, fwd, 3, 0.6);
+      hits++;
+      flesh = true;
+    }
+    for (const b of ctx.physics.bodies) {
+      to.set(b.pos.x - from.x, 0, b.pos.z - from.z);
+      const d = to.length();
+      if (d - b.radius > reach || d < 1e-4 || to.dot(fwd) / d < 0.3) continue;
+      const m = Math.min(b.mass, 40);
+      b.applyImpulse(new THREE.Vector3(fwd.x * m * 7, m * 2.6, fwd.z * m * 7), b.pos.clone().addScaledVector(fwd, -b.radius * 0.5).setY(b.pos.y + 0.05));
+      hits++;
+    }
+    if (hits > 0) {
+      ctx.hitstop(kills > 0 ? 0.09 : 0.065);
+      ctx.shake(0.32);
+      ctx.cam.kick(fwd, 0.25);
+      sfx.kick(from.clone().addScaledVector(fwd, 0.9), flesh);
+      ctx.fx.dust(from.clone().addScaledVector(fwd, 0.9).setY(0.1), 4, 0.6, PAL.dust, 0.35);
     }
     return { hits, kills };
   }

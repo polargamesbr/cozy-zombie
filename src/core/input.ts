@@ -94,7 +94,7 @@ export class Input {
   }
 
   release(code: string): void {
-    this.keys.delete(code);
+    if (this.keys.delete(code)) this.releasedKeys.add(code);
   }
 
   clickButton(b: number, hold = false): void {

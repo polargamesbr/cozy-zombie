@@ -24,8 +24,12 @@ Outros scripts:
 
 ## Controles
 
-WASD andar · mouse mira/atira · Espaço rola · R recarrega · 1/2 troca arma ·
-Q/E (ou botão direito) gira a câmera · roda dá zoom · M som · Esc pausa · N nova horda.
+WASD andar · mouse mira/atira · Espaço rola · R recarrega · 1/2 troca arma · F chuta ·
+G (segurar/soltar) dinamite · Q/E (ou botão direito) gira a câmera · roda dá zoom · M som ·
+P qualidade · I mostra FPS · Esc pausa · N chama a próxima horda na hora.
+
+A qualidade gráfica começa em "Alta" e cai sozinha (Média → Baixa) se o FPS ficar abaixo de ~48;
+escolher com `P` desliga o ajuste automático e fica salvo. `?low` força Baixa, `?ultra` força Ultra.
 
 ## Documentação
 

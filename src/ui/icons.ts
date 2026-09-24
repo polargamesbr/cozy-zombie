@@ -47,3 +47,16 @@ export const crosshairSvg = `
     <path d="M20 20 l6 6 M44 20 l-6 6 M20 44 l6 -6 M44 44 l-6 -6"/>
   </g>
 </svg>`;
+
+export const dynamiteSvg = `
+<svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true">
+  <g transform="rotate(-20 20 22)">
+    <rect x="9" y="12" width="7" height="24" rx="2.5" fill="#d9483e" stroke="#2b2226" stroke-width="2"/>
+    <rect x="16.5" y="12" width="7" height="24" rx="2.5" fill="#e35a4e" stroke="#2b2226" stroke-width="2"/>
+    <rect x="24" y="12" width="7" height="24" rx="2.5" fill="#d9483e" stroke="#2b2226" stroke-width="2"/>
+    <rect x="8" y="18" width="24" height="4" fill="#3a3236"/>
+    <rect x="8" y="28" width="24" height="4" fill="#3a3236"/>
+    <path d="M20 12 C 20 7, 24 6, 26 3" fill="none" stroke="#6b5a4a" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="26.5" cy="3" r="2.6" fill="#ffd36b"/>
+  </g>
+</svg>`;

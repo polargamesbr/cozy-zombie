@@ -55,6 +55,10 @@ const GradeShader = {
     }`,
 };
 
+/** 0 = Ultra … 3 = Baixa. */
+export type Quality = 0 | 1 | 2 | 3;
+export const QUALITY_NAMES = ['Ultra', 'Alta', 'Média', 'Baixa'] as const;
+
 export class RenderPipeline {
   readonly renderer: THREE.WebGLRenderer;
   readonly composer: EffectComposer;
@@ -66,6 +70,7 @@ export class RenderPipeline {
   private smaa: SMAAPass;
   private usePost = true;
   readonly high: boolean;
+  quality: Quality = 1;
 
   constructor(
     container: HTMLElement,
@@ -140,6 +145,30 @@ export class RenderPipeline {
     pass.setSize = (w: number, h: number) => setAtmo(Math.ceil(w / 2), Math.ceil(h / 2));
     this.composer.insertPass(pass, this.composer.passes.indexOf(this.ao) + 1);
     this.atmosphere = pass;
+  }
+
+  /**
+   * Trade looks for speed: resolution scale, MSAA, AO + atmosphere, bloom.
+   *   Ultra: dpr ≤ 1.75, MSAA, AO, mist · Alta: dpr ≤ 1.25, same effects
+   *   Média: 1×, no MSAA/AO/mist (SMAA + bloom) · Baixa: 0.75×, no bloom either
+   */
+  setQuality(q: Quality): void {
+    this.quality = q;
+    const dpr = window.devicePixelRatio || 1;
+    const pr = [Math.min(dpr, 1.75), Math.min(dpr, 1.25), 1, 0.75][q];
+    const fancy = q <= 1 && this.high;
+    if (this.ao) this.ao.enabled = fancy;
+    if (this.atmosphere) this.atmosphere.enabled = fancy;
+    this.bloom.enabled = q <= 2;
+    const samples = fancy ? 4 : 0;
+    for (const rt of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+      if (rt.samples !== samples) {
+        rt.samples = samples;
+        rt.dispose();
+      }
+    }
+    this.renderer.setPixelRatio(pr);
+    this.resize();
   }
 
   get domElement(): HTMLCanvasElement {

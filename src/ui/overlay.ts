@@ -5,11 +5,12 @@ const CONTROLS = `
     <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>andar</span></div>
     <div><kbd>Mouse</kbd><span>mirar · clique atira</span></div>
     <div><kbd>Espaço</kbd><span>rolar / esquivar</span></div>
-    <div><kbd>R</kbd><span>recarregar</span></div>
+    <div><kbd>R</kbd><span>recarregar</span> <kbd>F</kbd><span>chutar</span></div>
+    <div><kbd>G</kbd><span>segure: mirar dinamite · solte: arremessa</span></div>
     <div><kbd>1</kbd><kbd>2</kbd><span>pistola · espingarda</span></div>
     <div><kbd>Q</kbd><kbd>E</kbd><span>girar câmera (ou botão direito)</span></div>
     <div><kbd>Roda</kbd><span>zoom</span></div>
-    <div><kbd>M</kbd><span>som</span> <kbd>Esc</kbd><span>pausa</span></div>
+    <div><kbd>M</kbd><span>som</span> <kbd>P</kbd><span>qualidade</span> <kbd>Esc</kbd><span>pausa</span></div>
   </div>`;
 
 /** Title / pause / game-over cards, all HTML+CSS. */

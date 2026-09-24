@@ -27,6 +27,10 @@ export class CameraRig {
   private time = 0;
   /** Extra slow orbit (title screen). */
   idleOrbit = 0;
+  /** Cinematic pull (kill-cam): 0..1 blend toward `focusPoint` at `focusZoom`. */
+  focus = 0;
+  readonly focusPoint = new THREE.Vector3();
+  focusZoom = 10;
 
   private raycaster = new THREE.Raycaster();
   private plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -92,9 +96,10 @@ export class CameraRig {
 
     if (zoomSteps !== 0) this.zoomTarget = clamp(this.zoomTarget + zoomSteps * 2.2, this.minZoom, this.maxZoom);
     this.distance = damp(this.distance, this.zoomTarget, 8, dt);
+    const dist = lerp(this.distance, Math.min(this.distance, this.focusZoom), this.focus);
     // closer → slightly lower, more cinematic angle
-    const zt = (this.distance - this.minZoom) / (this.maxZoom - this.minZoom);
-    this.pitch = lerp(0.8, 1.02, zt);
+    const zt = (dist - this.minZoom) / (this.maxZoom - this.minZoom);
+    this.pitch = lerp(0.8, 1.02, clamp(zt, -0.4, 1));
 
     // follow with look-ahead
     const desired = new THREE.Vector3().copy(follow);
@@ -105,6 +110,7 @@ export class CameraRig {
       if (l > 0.001) la.multiplyScalar(Math.min(l * 0.28, 3.2) / l);
       desired.add(la);
     }
+    if (this.focus > 0) desired.lerp(this.focusPoint, this.focus);
     this.target.x = damp(this.target.x, desired.x, 6.5, dt);
     this.target.y = damp(this.target.y, desired.y, 6.5, dt);
     this.target.z = damp(this.target.z, desired.z, 6.5, dt);
@@ -125,7 +131,7 @@ export class CameraRig {
 
     const cp = Math.cos(this.pitch);
     const sp = Math.sin(this.pitch);
-    const off = new THREE.Vector3(Math.sin(this.yaw) * cp, sp, Math.cos(this.yaw) * cp).multiplyScalar(this.distance);
+    const off = new THREE.Vector3(Math.sin(this.yaw) * cp, sp, Math.cos(this.yaw) * cp).multiplyScalar(dist);
     const kick = new THREE.Vector3(this.kickX.value, this.kickY.value, this.kickZ.value);
     const lookAt = new THREE.Vector3().copy(this.target).add(kick);
     lookAt.y += 0.6;

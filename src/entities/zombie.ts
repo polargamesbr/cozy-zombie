@@ -7,7 +7,7 @@ import { J, type Ragdoll } from '../physics/ragdoll';
 import type { CharacterBody } from '../physics/world';
 import type { GameCtx, GrassPusher, NoiseListener } from '../game/context';
 import type { NavGrid } from '../world/navgrid';
-import { LAYOUT } from '../world/layout';
+import { inPond, LAYOUT } from '../world/layout';
 import { pondPush } from '../world/pond';
 import { sfx } from '../audio/sfx';
 import type { Player } from './player';
@@ -101,6 +101,8 @@ export class Zombie implements NoiseListener, GrassPusher {
   /** Legs are gone for good: drags itself with its arms. */
   crawl = false;
   private armBleed: [number, number] = [0, 0];
+  /** Seconds spent (as a body) in the pond. */
+  private wetT = -1;
   onDeath: ((z: Zombie) => void) | null = null;
   /** Debug: stand still (used to stage screenshots). */
   frozen = false;
@@ -413,14 +415,50 @@ export class Zombie implements NoiseListener, GrassPusher {
     this.onDeath?.(this);
   }
 
-  /** Radial blast from an explosion. */
-  blast(center: THREE.Vector3, strength: number): void {
+  /** Booted by the player. Returns true if the kick killed it. */
+  kicked(dir: THREE.Vector3, point: THREE.Vector3): boolean {
+    if (this.dead) return false;
+    const brute = this.type === 'brute';
+    this.hp -= 0.6;
+    this.alert();
+    this.model.flash(0.08);
+    this.model.jiggle(6);
+    this.headSnap.kick(10);
+    this.ctx.fx.bloodBurst(point, dir, 3, 0.8);
+    const k = this.def.knock * (brute ? 0.55 : 1);
+    const v = dir.clone().multiplyScalar(8.5 * k).setY(2.6 + 1.2 * k);
+    if (this.hp <= 0) {
+      this.dead = true;
+      this.state = 'dead';
+      this.body.alive = false;
+      this.model.setFace('zombieDead');
+      if (this.ragdoll) for (let i = 0; i < this.ragdoll.n; i++) this.ragdoll.addVelocity(i, v.x, v.y, v.z);
+      else this.enterRagdoll(v, 0.9);
+      this.model.popHat(new THREE.Vector3(v.x * 0.5, 4, v.z * 0.5));
+      sfx.groan(this.pos, this.def.pitch * 1.25, true);
+      this.ctx.feat('CHUTE!', point);
+      this.onDeath?.(this);
+      return true;
+    }
+    if (this.ragdoll) return false;
+    this.model.express('zombieHurt', 0.5);
+    if (brute && this.hp > this.def.hp * 0.4) {
+      // big boys just stumble back
+      this.stagger(dir.clone().multiplyScalar(4), 0.6);
+      return false;
+    }
+    this.knockDown(v, 0.9);
+    return false;
+  }
+
+  /** Radial blast from an explosion. Returns true if it killed this zombie. */
+  blast(center: THREE.Vector3, strength: number): boolean {
     const d = this.pos.clone().sub(center);
     d.y = 0;
     const dist = d.length();
     const dir = dist > 0.01 ? d.divideScalar(dist) : new THREE.Vector3(1, 0, 0);
     const dmg = 16 * strength * strength;
-    if (this.dead) return;
+    if (this.dead) return false;
     if (this.hp - dmg <= 0) {
       this.hp = 0;
       this.dead = true;
@@ -444,12 +482,13 @@ export class Zombie implements NoiseListener, GrassPusher {
       this.ctx.fx.gibs(this.pos.clone().setY(0.8), dir, 4);
       sfx.groan(this.pos, this.def.pitch * 1.3, true);
       this.onDeath?.(this);
-    } else {
-      this.hp -= dmg;
-      this.model.flash(0.1);
-      this.model.popHat(dir.clone().multiplyScalar(4).setY(6), 20);
-      this.knockDown(dir.clone().multiplyScalar(8 * strength * this.def.knock).setY(6 * strength), 1);
+      return true;
     }
+    this.hp -= dmg;
+    this.model.flash(0.1);
+    this.model.popHat(dir.clone().multiplyScalar(4).setY(6), 20);
+    this.knockDown(dir.clone().multiplyScalar(8 * strength * this.def.knock).setY(6 * strength), 1);
+    return false;
   }
 
   // ------------------------------------------------------------------ update
@@ -863,6 +902,7 @@ export class Zombie implements NoiseListener, GrassPusher {
     this.body.x = this.pos.x;
     this.body.z = this.pos.z;
     this.pushPos.copy(this.pos);
+    if (this.updateWater(dt, rd)) return;
 
     // neck fountain
     if (this.neckBleedT > 0) {
@@ -879,6 +919,7 @@ export class Zombie implements NoiseListener, GrassPusher {
       if (im.speed < 3.5) continue;
       const p = new THREE.Vector3(im.x, im.y, im.z);
       const n = new THREE.Vector3(im.nx, im.ny, im.nz);
+      if (im.kind === 'ground' && inPond(im.x, im.z)) continue;
       if (im.kind === 'ground') {
         if (im.speed > 5) this.ctx.fx.dust(p, Math.min(6, Math.round(im.speed * 0.5)), 1, PAL.dust, 0.4);
         if (im.index !== J.handL && im.index !== J.handR && im.speed > 4.5) this.ctx.fx.decals.blood(p.setY(0), n, 0.35 + Math.min(0.5, im.speed * 0.04));
@@ -939,6 +980,51 @@ export class Zombie implements NoiseListener, GrassPusher {
         sfx.groan(this.pos, this.def.pitch, true);
       }
     }
+  }
+
+  /**
+   * The pond: a splash on the way in, bodies float for a while and then sink, and a zombie that
+   * lands in the water while knocked down drowns. Returns true if the zombie was removed.
+   */
+  private updateWater(dt: number, rd: Ragdoll): boolean {
+    const wet = rd.submerged >= 3 && inPond(this.pos.x, this.pos.z, -0.2);
+    if (!wet) {
+      if (this.wetT >= 0 && !inPond(this.pos.x, this.pos.z)) this.wetT = -1;
+      return false;
+    }
+    if (this.wetT < 0) {
+      this.wetT = 0;
+      const v = rd.velocity(J.hipL, new THREE.Vector3());
+      this.ctx.fx.splash(this.pos.clone().setY(0.06), Math.min(2.2, 0.8 + v.length() * 0.18));
+      this.ctx.shake(0.15);
+      if (!this.dead) {
+        // no getting up from this one
+        this.dead = true;
+        this.state = 'dead';
+        this.hp = 0;
+        this.model.setFace('zombieDead');
+        sfx.groan(this.pos, this.def.pitch * 1.4, true);
+        this.ctx.feat('AFOGADO!', this.pos.clone().setY(0.6));
+        this.onDeath?.(this);
+      }
+    }
+    this.wetT += dt;
+    // bubbles and a few thrashing ripples, then it goes under
+    if (Math.random() < dt * (this.wetT < 1.5 ? 14 : 4)) {
+      const b = this.pos.clone().add(new THREE.Vector3(rng.spread(0.5), 0, rng.spread(0.5))).setY(0.07);
+      this.ctx.fx.particles.drops.spawn(b, new THREE.Vector3(rng.spread(0.4), rng.range(0.6, 1.6), rng.spread(0.4)), rng.range(0.025, 0.045), 0xeaf8f8, 1, 0.35);
+    }
+    if (this.wetT < 1.2 && Math.random() < dt * 6) {
+      for (const i of [J.handL, J.handR, J.footL]) rd.addVelocity(i, rng.spread(1.5), rng.range(0.5, 2), rng.spread(1.5));
+    }
+    rd.buoyancy = this.wetT < 4 ? 1 : Math.max(0, 1 - (this.wetT - 4) / 3);
+    rd.wake();
+    this.model.shadow.visible = false;
+    if (this.wetT > 11) {
+      this.remove();
+      return true;
+    }
+    return false;
   }
 
   remove(): void {

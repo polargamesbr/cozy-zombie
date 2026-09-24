@@ -140,7 +140,7 @@ export class Crate extends Prop {
     this.ctx.fx.dust(p, 6, 1.2, 0xe8d5b5, 0.45);
     this.ctx.fx.splinters(p, new THREE.Vector3(0, 1, 0), 5, PAL.crate);
     sfx.woodBreak(p);
-    if (rng.chance(0.55)) this.ctx.spawnPickup(rng.chance(0.5) ? 'ammoShotgun' : 'ammoPistol', p.clone().setY(0.2));
+    if (rng.chance(0.55)) this.ctx.spawnPickup(rng.chance(0.2) ? 'dynamite' : rng.chance(0.5) ? 'ammoShotgun' : 'ammoPistol', p.clone().setY(0.2));
     super.breakApart(dir, speed);
   }
 }
@@ -368,10 +368,9 @@ export class PropaneTank extends Prop {
     return false;
   }
 
-  update(): void {
+  update(dt = 1 / 60): void {
     super.update();
-    if (this.armed < 0 || this.broken) return;
-    const dt = 1 / 60;
+    if (this.armed < 0 || this.broken || dt <= 0) return;
     this.armed -= dt;
     this.blink += dt;
     this.cap.emissiveIntensity = Math.sin(this.blink * 40) > 0 ? 1.8 : 0.2;
@@ -385,7 +384,7 @@ export class PropaneTank extends Prop {
       this.broken = true;
       const p = this.body.pos.clone();
       this.remove();
-      this.ctx.explode(p, 1);
+      this.ctx.explode(p, 1, 'propane');
     }
   }
 }

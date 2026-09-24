@@ -330,6 +330,109 @@ const scenarios = {
     await shot('crawlclose-2');
     console.log(JSON.stringify(await g(() => __game.state())));
   },
+  async kick() {
+    // boot a zombie off the bank: it flies, splashes and drowns
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(-12.1, -13.1, -1.57);
+      __game.spawn('shambler', -13.3, -13.1);
+      __game.spawn('shambler', -11.6, -10.9);
+      __game.freeze(true);
+      __game.camera({ yaw: 2.2, zoom: 13 });
+      __game.aim(-17, -13.1);
+      __game.advance(0.5);
+      __game.kick();
+      __game.advance(0.05);
+    });
+    await shot('kick-1');
+    await g(() => __game.advance(0.2));
+    await shot('kick-2');
+    await g(() => __game.advance(0.45));
+    await shot('kick-3');
+    console.log(JSON.stringify(await g(() => __game.state())));
+    await g(() => __game.advance(2.5));
+    await shot('kick-4');
+    console.log(JSON.stringify(await g(() => __game.state())));
+  },
+  async dynamite() {
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(-3, -3, 1.57);
+      __game.spawn('shambler', 4.2, -2.4);
+      __game.spawn('runner', 5, -3.7);
+      __game.spawn('shambler', 3.7, -4.3);
+      __game.spawn('brute', 7.5, -1.2);
+      __game.freeze(true);
+      __game.camera({ yaw: -0.3, zoom: 17 });
+      __game.advance(0.3);
+      __game.holdThrow(4.3, -3.4);
+      __game.advance(0.4);
+    });
+    await shot('dyn-1');
+    await g(() => {
+      __game.releaseThrow();
+      __game.advance(0.35);
+    });
+    await shot('dyn-2');
+    await g(() => __game.advance(1.53));
+    await shot('dyn-3');
+    await g(() => __game.advance(0.4));
+    await shot('dyn-4');
+    console.log(JSON.stringify(await g(() => __game.state())));
+  },
+  async killcam() {
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(-7.5, 0.5, 0);
+      __game.spawn('shambler', -7.4, 3.3);
+      __game.freeze(true);
+      __game.camera({ yaw: -0.3, zoom: 17 });
+      __game.aim(-7.4, 5, 0.9);
+      __game.weapon('shotgun');
+      __game.advance(0.6);
+      __game.fire();
+      __game.advance(0.2);
+    });
+    await shot('killcam-1');
+    await g(() => __game.advance(0.6));
+    await shot('killcam-2');
+    console.log(JSON.stringify(await g(() => __game.state())));
+    await g(() => __game.advance(2.5));
+    await shot('killcam-3');
+  },
+  async truck() {
+    // shoot the fuel cap until it catches fire, then it takes the zombies with it
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(-2.7, 1.9, 1.57);
+      __game.spawn('shambler', 2.6, 3.8);
+      __game.spawn('runner', -0.6, 4.4);
+      __game.spawn('shambler', 3.4, -0.6);
+      __game.spawn('shambler', -2.4, -0.8);
+      __game.freeze(true);
+      __game.camera({ yaw: -0.3, zoom: 18 });
+      __game.weapon('pistol');
+      __game.advance(0.6);
+      for (let i = 0; i < 5; i++) {
+        __game.aim(-0.2, 1.69, 1.12);
+        __game.fire();
+        __game.advance(0.2);
+      }
+      __game.advance(0.4);
+    });
+    await shot('truck-1');
+    await g(() => __game.advance(1.95));
+    await shot('truck-2');
+    await g(() => __game.advance(0.5));
+    await shot('truck-3');
+    console.log(JSON.stringify(await g(() => __game.state())));
+    await g(() => __game.advance(3));
+    await shot('truck-4');
+  },
   async closeup() {
     await g(() => {
       __game.freeze(true);

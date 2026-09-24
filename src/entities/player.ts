@@ -12,6 +12,7 @@ import { LAYOUT } from '../world/layout';
 import { pondPush } from '../world/pond';
 import { sfx } from '../audio/sfx';
 import type { Combat } from './combat';
+import { Dynamite, dynamiteMesh, ThrowArc, throwTarget, throwVelocity } from './dynamite';
 
 export interface PlayerInput {
   moveX: number;
@@ -22,6 +23,11 @@ export interface PlayerInput {
   reload: boolean;
   dodge: boolean;
   switchTo: WeaponId | null;
+  kick?: boolean;
+  /** Dynamite key: held (aiming the arc), pressed this frame, released this frame. */
+  throwHeld?: boolean;
+  throwPressed?: boolean;
+  throwReleased?: boolean;
 }
 
 interface Ammo {
@@ -71,6 +77,15 @@ export class Player implements GrassPusher {
   private groundY = 0;
   /** Debug/test: ignore damage. */
   invincible = false;
+  dynamite = 3;
+  readonly maxDynamite = 5;
+  private kickT = -1;
+  private kickCd = 0;
+  private kickDone = false;
+  private aimingThrow = false;
+  private throwT = -1;
+  private readonly arc = new ThrowArc();
+  private handDynamite = dynamiteMesh();
 
   constructor(
     private ctx: GameCtx,
@@ -100,6 +115,11 @@ export class Player implements GrassPusher {
     ctx.root.add(this.model.root);
     ctx.root.add(this.model.shadow);
     this.model.ground = (gx, gz) => ctx.groundAt(gx, gz);
+    ctx.root.add(this.arc.group);
+    this.handDynamite.scale.setScalar(0.85);
+    this.handDynamite.rotation.set(0.4, 0, 0.3);
+    this.handDynamite.visible = false;
+    this.model.handL.add(this.handDynamite);
     this.pos.set(x, 0, z);
     this.body = {
       x,
@@ -180,6 +200,8 @@ export class Player implements GrassPusher {
     this.model.popHat(new THREE.Vector3(impulse.x * 0.8, 4.5, impulse.z * 0.8));
     this.guns.pistol.visible = false;
     this.guns.shotgun.visible = false;
+    this.handDynamite.visible = false;
+    this.arc.hide();
     this.ctx.slowmo(0.35, 1.2);
     this.onDeath?.();
   }
@@ -205,8 +227,30 @@ export class Player implements GrassPusher {
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.dodgeCd = Math.max(0, this.dodgeCd - dt);
 
+    this.kickCd = Math.max(0, this.kickCd - dt);
+    // ---------------- melee kick
+    if (input.kick && this.kickT < 0 && this.kickCd <= 0 && this.dodgeT <= 0) {
+      this.kickT = 0;
+      this.kickDone = false;
+      this.kickCd = 0.55;
+      this.cancelReload();
+      sfx.whoosh(this.pos);
+    }
+    if (this.kickT >= 0) {
+      this.kickT += dt;
+      if (!this.kickDone && this.kickT >= 0.085) {
+        this.kickDone = true;
+        const fwd = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+        const res = this.combat.kick(this.pos, fwd, this.body);
+        this.squash.kick(res.hits > 0 ? 2.5 : 1.2);
+        this.vel.addScaledVector(fwd, res.hits > 0 ? -1.5 : 1.8);
+        if (res.kills > 0) this.lastKillT = 0;
+      }
+      if (this.kickT > 0.36) this.kickT = -1;
+    }
+
     // ---------------- movement
-    const maxSpeed = 4.7;
+    const maxSpeed = 4.7 * (this.kickT >= 0 ? 0.35 : this.aimingThrow ? 0.8 : 1);
     let mx = input.moveX;
     let mz = input.moveZ;
     const ml = Math.hypot(mx, mz);
@@ -292,7 +336,7 @@ export class Player implements GrassPusher {
     if (input.reload && !this.reloading && a.mag < this.weapon.mag && a.reserve > 0) this.startReload();
     if (this.reloading) this.updateReload(dt);
     const wantFire = this.weapon.id === 'pistol' ? input.fire : input.fire;
-    if (wantFire && this.dodgeT <= 0 && this.swapT <= 0) {
+    if (wantFire && this.dodgeT <= 0 && this.swapT <= 0 && this.kickT < 0) {
       if (this.reloading && this.weapon.perShell && a.mag > 0) this.cancelReload();
       if (!this.reloading && this.cooldown <= 0) {
         if (a.mag > 0) this.fire(input.aim);
@@ -313,9 +357,49 @@ export class Player implements GrassPusher {
       }
     }
 
+    this.updateThrow(dt, input);
     this.animate(dt);
     this.syncModel();
     this.model.update(dt);
+  }
+
+  /** Where the dynamite leaves the hand (over the left shoulder). */
+  private throwOrigin(out = new THREE.Vector3()): THREE.Vector3 {
+    // model +X ("left") in world
+    return out.set(this.pos.x + Math.cos(this.yaw) * 0.22, this.pos.y + 1.25, this.pos.z - Math.sin(this.yaw) * 0.22);
+  }
+
+  private updateThrow(dt: number, input: PlayerInput): void {
+    if (this.throwT >= 0) {
+      this.throwT += dt;
+      if (this.throwT > 0.35) this.throwT = -1;
+    }
+    if (!this.aimingThrow && (input.throwHeld || input.throwPressed) && this.dynamite > 0 && this.throwT < 0 && this.dodgeT <= 0) {
+      this.aimingThrow = true;
+      sfx.reload(this.pos, true);
+    }
+    if (!this.aimingThrow) {
+      this.arc.hide();
+      this.handDynamite.visible = false;
+      return;
+    }
+    this.handDynamite.visible = true;
+    const from = this.throwOrigin();
+    const target = throwTarget(from, input.aim, (x, z) => this.ctx.groundAt(x, z));
+    const vel = throwVelocity(from, target);
+    this.arc.update(this.ctx, from, vel, this.ctx.time);
+    if (input.throwReleased || !input.throwHeld) {
+      this.aimingThrow = false;
+      this.arc.hide();
+      this.handDynamite.visible = false;
+      this.dynamite--;
+      this.throwT = 0;
+      vel.x += this.vel.x * 0.3;
+      vel.z += this.vel.z * 0.3;
+      this.ctx.add(new Dynamite(this.ctx, from, vel));
+      sfx.whoosh(this.pos);
+      this.squash.kick(1.2);
+    }
   }
 
   private startReload(): void {
@@ -519,8 +603,49 @@ export class Player implements GrassPusher {
       gun.rotation.set(-(ar + er) - 0.04 + up * 0.3, -0.16, 0);
       gun.position.set(0.02, 0.0, 0.02 - this.gunKick.value * 0.018);
     }
+    // front kick with the right leg: chamber, snap out, recover
+    if (this.kickT >= 0) {
+      const k = this.kickT;
+      const ease = (x: number) => x * x * (3 - 2 * x);
+      let thigh = 0;
+      let knee = 0;
+      let back = 0;
+      if (k < 0.085) {
+        const e = ease(k / 0.085);
+        thigh = -1.15 * e;
+        knee = 1.6 * e;
+        back = -0.12 * e;
+      } else if (k < 0.16) {
+        const e = ease((k - 0.085) / 0.075);
+        thigh = -1.15 - 0.5 * e;
+        knee = 1.6 - 1.55 * e;
+        back = -0.12 - 0.16 * e;
+      } else {
+        const e = 1 - ease(Math.min(1, (k - 0.16) / 0.2));
+        thigh = -1.65 * e;
+        knee = 0.05 + 0.4 * (1 - e) * e * 4 * 0.25;
+        back = -0.28 * e;
+      }
+      m.legR.rotation.set(thigh, 0, -0.05);
+      m.shinR.rotation.set(knee, 0, 0);
+      m.legL.rotation.set(0.12, 0, 0.06);
+      m.shinL.rotation.set(0.35, 0, 0);
+      m.body.rotation.x = back;
+      m.armL.rotation.z -= 0.5 * Math.min(1, k * 8);
+    }
+    // dynamite: wind up over the shoulder, then an overhand lob
+    if (this.aimingThrow) {
+      m.armL.rotation.set(-2.75 + Math.sin(t * 5) * 0.05, 0, -0.35);
+      m.foreL.rotation.set(-1.1, 0, 0);
+      m.torso.rotation.y = 0.25;
+    } else if (this.throwT >= 0) {
+      const e = Math.min(1, this.throwT / 0.12);
+      const r = this.throwT > 0.12 ? 1 - Math.min(1, (this.throwT - 0.12) / 0.23) : 1;
+      m.armL.rotation.set((-2.75 + 2.1 * e) * r + m.armL.rotation.x * (1 - r), 0, -0.35 * r);
+      m.foreL.rotation.set(-1.1 * (1 - e) * r, 0, 0);
+    }
     m.head.rotation.set(-this.headNod.value * 0.04 + Math.sin(t * 1.3) * 0.03, 0, Math.sin(t * 0.9) * 0.03);
-    m.torso.rotation.y = side * 0.1;
+    if (!this.aimingThrow) m.torso.rotation.y = side * 0.1;
     m.setXray(true);
     void wrapAngle;
   }
@@ -533,6 +658,7 @@ export class Player implements GrassPusher {
 
   dispose(): void {
     this.model.dispose();
+    this.arc.group.removeFromParent();
     const i = this.ctx.physics.characters.indexOf(this.body);
     if (i >= 0) this.ctx.physics.characters.splice(i, 1);
     if (this.ragdoll) this.ctx.physics.removeRagdoll(this.ragdoll);

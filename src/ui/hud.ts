@@ -1,4 +1,4 @@
-import { crosshairSvg, heartSvg, pistolSvg, shotgunSvg, zombieHeadSvg } from './icons';
+import { crosshairSvg, dynamiteSvg, heartSvg, pistolSvg, shotgunSvg, zombieHeadSvg } from './icons';
 import type { Player } from '../entities/player';
 
 /**
@@ -22,6 +22,10 @@ export class Hud {
   private crossReload: SVGCircleElement;
   private toastEl: HTMLDivElement;
   private toastT = 0;
+  private fpsEl!: HTMLDivElement;
+  private dyn: HTMLDivElement;
+  private dynCount: HTMLSpanElement;
+  private lastDyn = -1;
   private lastHp = -1;
   private lastWeapon = '';
   private lastMag = -1;
@@ -33,9 +37,12 @@ export class Hud {
     this.root.className = 'hud';
     this.root.innerHTML = `
       <div class="hud-hearts"></div>
+      <div class="hud-fps"></div>
       <div class="hud-objective"><span class="obj-icon">${zombieHeadSvg}</span><span class="obj-text"></span><span class="obj-count"></span></div>
       <div class="hud-weapon"><div class="weapon-icon"></div><div class="ammo"><span class="mag">0</span><span class="sep">/</span><span class="reserve">0</span></div></div>
+      <div class="hud-dyn" title="G: dinamite"><span class="dyn-icon">${dynamiteSvg}</span><span class="dyn-count">×0</span><span class="dyn-key">G</span></div>
       <div class="hud-toast"></div>
+      <div class="hud-bars"><i></i><i></i></div>
       <div class="crosshair">${crosshairSvg}</div>
     `;
     parent.appendChild(this.root);
@@ -52,6 +59,27 @@ export class Hud {
     this.crossHit = this.root.querySelector('.ch-hit')!;
     this.crossReload = this.root.querySelector('.ch-reload')!;
     this.toastEl = this.root.querySelector('.hud-toast')!;
+    this.dyn = this.root.querySelector('.hud-dyn')!;
+    this.fpsEl = this.root.querySelector('.hud-fps')!;
+    this.dynCount = this.root.querySelector('.dyn-count')!;
+  }
+
+  /** Small FPS / quality readout (null hides it). */
+  setFps(text: string | null): void {
+    const t = text ?? '';
+    if (this.fpsEl.textContent !== t) this.fpsEl.textContent = t;
+  }
+
+  /** A chunky label that pops out of a screen point and floats up (environmental kills etc.). */
+  feat(text: string, x: number, y: number): void {
+    const el = document.createElement('div');
+    el.className = 'hud-feat';
+    el.textContent = text;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.setProperty('--tilt', `${(Math.random() * 10 - 5).toFixed(1)}deg`);
+    this.root.appendChild(el);
+    setTimeout(() => el.remove(), 1500);
   }
 
   setVisible(v: boolean): void {
@@ -128,6 +156,18 @@ export class Hud {
       this.lastReserve = a.reserve;
     }
     this.mag.classList.toggle('empty', a.mag === 0);
+
+    // dynamite
+    if (p.dynamite !== this.lastDyn) {
+      this.dynCount.textContent = `×${p.dynamite}`;
+      this.dyn.classList.toggle('empty', p.dynamite === 0);
+      if (this.lastDyn >= 0) {
+        this.dyn.classList.remove('bump');
+        void this.dyn.offsetWidth;
+        this.dyn.classList.add('bump');
+      }
+      this.lastDyn = p.dynamite;
+    }
 
     // crosshair
     this.cross.style.transform = `translate(${mouseX}px, ${mouseY}px) translate(-50%, -50%)`;

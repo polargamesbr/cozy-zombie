@@ -315,7 +315,9 @@ function grassMaterial(): THREE.MeshToonMaterial {
            flatten = max(flatten, ring * 0.8);
            // offsets are in world space, the instance may be rotated: rotate back
            vec3 wOff = vec3(off.x, 0.0, off.y);
-           vec3 lOff = inverse(mat3(instanceMatrix)) * wOff;
+           // instances are only yawed and scaled (same x/z scale): inverse = transpose / s²
+           mat3 im = mat3(instanceMatrix);
+           vec3 lOff = transpose(im) * wOff / dot(im[0], im[0]);
            transformed += lOff * h;
            transformed.y *= 1.0 - flatten * 0.45;
          }`,
@@ -372,6 +374,8 @@ export function createGrass(): THREE.Group {
     });
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
+    // instances are in random order, so drawing fewer thins the grass evenly (quality LOD)
+    mesh.userData.lodCount = list.length;
     group.add(mesh);
   });
   return group;

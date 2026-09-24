@@ -43,6 +43,15 @@ export class Lighting {
   }
 
   /** Keep the shadow frustum centered on the view, snapped to texels to avoid shimmering. */
+  /** Shadow map resolution (quality settings). */
+  setShadowSize(size: number): void {
+    const s = this.sun.shadow;
+    if (s.mapSize.x === size) return;
+    s.mapSize.set(size, size);
+    s.map?.dispose();
+    s.map = null;
+  }
+
   update(center: THREE.Vector3): void {
     const texel = (this.shadowExtent * 2) / this.sun.shadow.mapSize.x;
     // snap in light space

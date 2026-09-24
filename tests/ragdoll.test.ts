@@ -71,3 +71,25 @@ describe('ragdoll', () => {
     expect(Math.abs(dist)).toBeLessThan(3.2);
   });
 });
+
+describe('ragdoll in water', () => {
+  it('floats at the surface, then sinks to the bottom without buoyancy', () => {
+    const world = new PhysicsWorld();
+    world.water = () => 1;
+    const rd = makeRagdoll();
+    const rest = (rd as unknown as { rest: THREE.Vector3[] }).rest;
+    rd.setPositions(rest.map((p) => p.clone().setY(p.y + 1)), rest.map(() => new THREE.Vector3(2, 0, 0)));
+    world.addRagdoll(rd);
+    for (let i = 0; i < 120 * 3; i++) world.update(PHYS_DT);
+    const floating = rd.center(new THREE.Vector3());
+    expect(floating.y).toBeGreaterThan(-0.25);
+    expect(floating.y).toBeLessThan(0.4);
+    // heavy drag: it doesn't glide across the pond
+    expect(floating.x).toBeLessThan(2.5);
+    expect(rd.submerged).toBeGreaterThan(3);
+    rd.buoyancy = 0;
+    rd.wake();
+    for (let i = 0; i < 120 * 4; i++) world.update(PHYS_DT);
+    expect(rd.center(new THREE.Vector3()).y).toBeLessThan(-0.6);
+  });
+});

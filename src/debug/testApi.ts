@@ -94,6 +94,21 @@ export function installTestApi(game: Game): void {
       const m = i < 0 ? game.player.model : game.zombies[i]?.model;
       m?.express(kind, seconds);
     },
+    /** Melee kick (one frame). */
+    kick(): void {
+      game.input.press('KeyF');
+      game.tick(1 / 60);
+    },
+    /** Start aiming a dynamite throw at (x, z) — the arc shows until `releaseThrow()`. */
+    holdThrow(x: number, z: number): void {
+      game.aimOverride = new THREE.Vector3(x, 0.72, z);
+      game.input.press('KeyG', true);
+      game.tick(1 / 60);
+    },
+    releaseThrow(): void {
+      game.input.release('KeyG');
+      game.tick(1 / 60);
+    },
     godMode(): void {
       game.player.invincible = true;
     },
@@ -135,7 +150,9 @@ export function installTestApi(game: Game): void {
       return {
         time: game.time,
         state: game.state,
-        player: { x: game.player.pos.x, z: game.player.pos.z, hp: game.player.hp, weapon: game.player.weapon.id, ammo: game.player.currentAmmo },
+        player: { x: game.player.pos.x, z: game.player.pos.z, hp: game.player.hp, weapon: game.player.weapon.id, ammo: game.player.currentAmmo, dynamite: game.player.dynamite },
+        killed: game.killed,
+        total: game.total,
         zombies: game.zombies.map((z) => ({ type: z.type, x: +z.pos.x.toFixed(2), z: +z.pos.z.toFixed(2), state: z.state, hp: +z.hp.toFixed(2), crawl: z.crawl, limp: z.limpSide, arms: z.model.armLost.map((l) => !l) })),
         bodies: game.physics.bodies.length,
         ragdolls: game.physics.ragdolls.length,

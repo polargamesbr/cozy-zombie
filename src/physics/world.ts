@@ -39,6 +39,8 @@ const _o = new THREE.Vector3();
 const _d = new THREE.Vector3();
 
 export class PhysicsWorld {
+  /** Water depth under a point (the pond), used by ragdolls to float and sink. */
+  water: ((x: number, z: number) => number) | null = null;
   statics: StaticCollider[] = [];
   bodies: RigidBody[] = [];
   ragdolls: Ragdoll[] = [];
@@ -69,6 +71,7 @@ export class PhysicsWorld {
   }
 
   addRagdoll(r: Ragdoll): Ragdoll {
+    r.water = this.water;
     this.ragdolls.push(r);
     return r;
   }

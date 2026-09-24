@@ -8,10 +8,19 @@ import type { GameCtx } from '../game/context';
 import type { Player } from './player';
 import { sfx } from '../audio/sfx';
 import { TEX } from '../fx/particles';
+import { dynamiteMesh } from './dynamite';
 
-export type PickupKind = 'ammoPistol' | 'ammoShotgun' | 'pie';
+export type PickupKind = 'ammoPistol' | 'ammoShotgun' | 'pie' | 'dynamite';
 
 function buildPickup(kind: PickupKind): THREE.Group {
+  if (kind === 'dynamite') {
+    const d = dynamiteMesh();
+    d.rotation.set(0, 0, Math.PI / 2);
+    d.position.y = 0.12;
+    const grp = new THREE.Group();
+    grp.add(d);
+    return grp;
+  }
   const g = new GeoBuilder();
   if (kind === 'pie') {
     g.add(cyl(0.26, 0.22, 0.1, 18), 0xd9a066, compose(0, 0.05, 0));
@@ -102,6 +111,10 @@ export class Pickup {
         if (player.hp >= player.maxHp) return null;
         player.heal(2);
         msg = 'Torta quentinha! +2 ❤';
+      } else if (this.kind === 'dynamite') {
+        if (player.dynamite >= player.maxDynamite) return null;
+        player.dynamite++;
+        msg = '+1 dinamite';
       } else if (this.kind === 'ammoShotgun') {
         player.addAmmo('shotgun', 6);
         msg = '+6 cartuchos';

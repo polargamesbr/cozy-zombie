@@ -324,6 +324,41 @@ export class Sfx {
     this.noise(o, this.now, 0.14, 'highpass', 3500, 0.6, 0.6, 5000, 0.01);
   }
 
+  /** Burning fuse: a crackly sizzle. */
+  fuse(pos: THREE.Vector3): void {
+    if (!this.ready || !this.gate('fuse', 0.15)) return;
+    const t = this.now;
+    const o = this.out(pos, 0.22);
+    this.noise(o, t, 0.24, 'highpass', 4200, 0.8, 0.5, 6000, 0.02);
+    for (let i = 0; i < 3; i++) this.noise(o, t + Math.random() * 0.2, 0.012, 'bandpass', 2500 + Math.random() * 2500, 3, 0.4);
+  }
+
+  /** Big boot connecting: low punch, cloth slap and a crunch. */
+  kick(pos: THREE.Vector3, flesh = true): void {
+    if (!this.ready || !this.gate('kick', 0.05)) return;
+    const t = this.now;
+    const o = this.out(pos, 0.9);
+    this.tone(o, t, 0.18, 'sine', 130, 42, 1.1);
+    this.noise(o, t, 0.08, 'lowpass', 1800, 0.8, 0.9, 300);
+    if (flesh) this.noise(o, t + 0.01, 0.14, 'bandpass', 700, 1.4, 0.5, 250);
+  }
+
+  /** Kill-cam: time slows down (a descending, filtered whoosh with a low hit). */
+  slowmo(): void {
+    if (!this.ready) return;
+    const t = this.now;
+    const o = this.out(null, 0.5, { wet: 0.8 });
+    this.noise(o, t, 1.2, 'bandpass', 1400, 1.2, 0.5, 180, 0.05);
+    this.tone(o, t, 1.3, 'sine', 110, 38, 0.8, 0.01);
+  }
+
+  /** Something big catching fire: a low roar. */
+  roar(pos: THREE.Vector3): void {
+    if (!this.ready || !this.gate('roar', 0.35)) return;
+    const o = this.out(pos, 0.35);
+    this.noise(o, this.now, 0.5, 'lowpass', 500, 0.6, 0.6, 300, 0.08);
+  }
+
   shellTink(pos: THREE.Vector3, soft = false): void {
     if (!this.ready || !this.gate('tink', 0.035)) return;
     const t = this.now;

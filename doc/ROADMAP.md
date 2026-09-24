@@ -36,15 +36,17 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
    - [x] Reações localizadas: tiro na perna → zumbi manca/rasteja; espingarda pode arrancar braço (coto sangrando); chapéu voa
    - [x] Rostos: piscar, susto ao tomar dano, zumbi abrindo a boca antes do ataque
 4. **Verbos de combate**
-   - [ ] Chute/empurrão corpo a corpo (joga zumbis em cercas, no lago, em outros zumbis)
-   - [ ] Dinamite arremessável com arco previsto
-   - [ ] Kill-cam em câmera lenta no último zumbi da horda
-   - [ ] Mortes pelo ambiente: empurrar para o lago, botijão, caminhonete
+   - [x] Chute/empurrão corpo a corpo (joga zumbis em cercas, no lago, em outros zumbis) — tecla F
+   - [x] Dinamite arremessável com arco previsto — segurar/soltar G, quica e rola, contador no HUD
+   - [x] Kill-cam em câmera lenta no último zumbi da horda (zoom + barras de cinema)
+   - [x] Mortes pelo ambiente: lago (corpos boiam, derrubado se afoga), botijão, caminhonete que pega fogo e explode; rótulos de abate
 5. **Inimigos e estrutura**
    - [ ] Zumbis que pulam/derrubam cercas, horda saindo do celeiro com a porta explodindo, rastejantes
    - [ ] Um dia na fazenda: tarde → pôr do sol → noite, hordas entre fases, consertar cercas entre ondas
+     (já feito: hordas começam sozinhas com contagem regressiva após limpar a fazenda)
 6. **Técnico**
    - [ ] 60 fps estáveis: merge de cercas/props, LOD da grama, opções de qualidade, contador de FPS
+     (já feito: 4 níveis de qualidade com ajuste automático, densidade da grama por nível, FPS com `I`)
    - [ ] Suporte a controle com vibração
 
 ## Backlog anterior
@@ -57,17 +59,17 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
 2. **Feel**
    - [ ] Rumble/vibração em gamepad + suporte a controle
    - [x] Mais variações de reação de acerto (braço arrancado com espingarda)
-   - [ ] Corpos boiando no lago (afundar parcialmente + respingos)
+   - [x] Corpos boiando no lago (afundar parcialmente + respingos)
    - [ ] Latas e cartuchos chutáveis pelo jogador
 3. **Mundo interativo**
    - [ ] Janelas que quebram, lâmpada do poste que pode ser apagada a tiro
    - [ ] Galinhas que fogem e cata-vento que gira com explosões
    - [ ] Portas do celeiro abrindo para um interior pequeno
 4. **Gameplay**
-   - [ ] Arremessável (dinamite) e arma corpo a corpo (pá)
+   - [x] Arremessável (dinamite) · [ ] arma corpo a corpo (pá)
    - [ ] Mais tipos de zumbi (espantalho zumbi, galinha zumbi?)
    - [ ] Progressão curta entre hordas (upgrades simples)
 5. **Técnico**
    - [ ] Mesclar segmentos de cerca/props estáticos para reduzir draw calls
-   - [ ] Opção de qualidade (sombras/MSAA/bloom) e contador de FPS
+   - [x] Opção de qualidade (sombras/MSAA/bloom) e contador de FPS
    - [ ] Deploy automático (GitHub Pages)

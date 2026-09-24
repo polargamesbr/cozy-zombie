@@ -4,7 +4,7 @@ import { Input } from '../core/input';
 import { rng } from '../core/rng';
 import { CameraRig } from '../render/cameraRig';
 import { Lighting } from '../render/lighting';
-import { RenderPipeline } from '../render/pipeline';
+import { QUALITY_NAMES, RenderPipeline, type Quality } from '../render/pipeline';
 import { GLOBAL_UNIFORMS } from '../render/materials';
 import { PhysicsWorld, GRAVITY } from '../physics/world';
 import { Effects } from '../fx/effects';
@@ -20,7 +20,8 @@ import { Pickup, type PickupKind } from '../entities/pickup';
 import type { WeaponId } from '../entities/weapons';
 import { Hud } from '../ui/hud';
 import { Overlay } from '../ui/overlay';
-import type { GameCtx, GrassPusher, NoiseListener, Updatable } from './context';
+import type { BlastSource, GameCtx, GrassPusher, NoiseListener, Updatable } from './context';
+import { pondDepth } from '../world/pond';
 
 type GameState = 'title' | 'playing' | 'paused' | 'dead';
 
@@ -29,7 +30,11 @@ export interface GameOptions {
   seed?: number;
   /** Skip AO, atmosphere and MSAA for slower GPUs. */
   low?: boolean;
+  /** Start at the top quality tier. */
+  ultra?: boolean;
 }
+
+const QUALITY_KEY = 'cozy-zombie-quality';
 
 export class Game implements GameCtx {
   readonly scene = new THREE.Scene();
@@ -73,8 +78,16 @@ export class Game implements GameCtx {
   readonly test: boolean;
   private running = true;
   fps = 60;
-  private fpsAcc = 0;
-  private fpsN = 0;
+  private perfAcc = 0;
+  private perfN = 0;
+  private perfCool = 4;
+  /** Drop a quality tier automatically when the frame rate sags (off once the player picks one). */
+  private autoQuality = true;
+  private showFps = false;
+  /** Countdown to the next horde after the farm is cleared. */
+  private nextWaveT = -1;
+  /** Slow-motion close-up on the last kill of a wave. */
+  private killCam: { t: number; z: Zombie } | null = null;
 
   constructor(container: HTMLElement, opts: GameOptions = {}) {
     this.test = !!opts.test;
@@ -83,6 +96,20 @@ export class Game implements GameCtx {
     this.pipeline = new RenderPipeline(container, this.scene, this.cam.camera, { preserveDrawingBuffer: this.test, lowQuality: !!opts.low });
     this.lighting = new Lighting(this.scene);
     this.pipeline.enableAtmosphere(this.lighting.sun);
+    let q: Quality = opts.low ? 3 : opts.ultra ? 0 : 1;
+    if (this.test) this.autoQuality = false;
+    else if (!opts.low && !opts.ultra) {
+      try {
+        const saved = localStorage.getItem(QUALITY_KEY);
+        if (saved !== null && /^[0-3]$/.test(saved)) {
+          q = Number(saved) as Quality;
+          this.autoQuality = false;
+        }
+      } catch {
+        // storage blocked: just use the default
+      }
+    }
+    this.pipeline.setQuality(q);
     this.input = new Input(this.pipeline.domElement);
     this.hud = new Hud(document.body);
     this.overlay = new Overlay(document.body);
@@ -107,6 +134,7 @@ export class Game implements GameCtx {
 
   private buildWorld(): void {
     this.physics = new PhysicsWorld();
+    this.physics.water = pondDepth;
     this.fx.clear();
     this.fx.debris.statics = this.physics.statics;
     this.root = new THREE.Group();
@@ -144,6 +172,49 @@ export class Game implements GameCtx {
     LAYOUT.zombieSpawns.forEach((s, i) => this.spawnZombie(s.type, s.x, s.z, i));
     this.nav.compute(this.player.pos.x, this.player.pos.z);
     this.lastHp = this.player.hp;
+    this.nextWaveT = -1;
+    this.applyQuality(this.pipeline.quality);
+  }
+
+  /** Apply a quality tier to the renderer, the shadows and the grass density. */
+  applyQuality(q: Quality): void {
+    if (q !== this.pipeline.quality) this.pipeline.setQuality(q);
+    this.lighting.setShadowSize(q >= 2 ? 1024 : 2048);
+    const density = [1, 1, 0.65, 0.4][q];
+    this.farm.group.traverse((o) => {
+      const n = o.userData.lodCount as number | undefined;
+      if (n !== undefined) (o as THREE.InstancedMesh).count = Math.round(n * density);
+    });
+  }
+
+  private cycleQuality(): void {
+    const q = ((this.pipeline.quality + 1) % 4) as Quality;
+    this.autoQuality = false;
+    this.applyQuality(q);
+    try {
+      localStorage.setItem(QUALITY_KEY, String(q));
+    } catch {
+      // not persisted, that's fine
+    }
+    this.hud.toast(`Qualidade: ${QUALITY_NAMES[q]}`, 1.6);
+  }
+
+  /** Frame-rate watchdog: average over ~2 s, ignoring hitches (shader compiles, tab switches). */
+  private trackPerf(realDt: number): void {
+    if (realDt <= 0 || realDt > 0.25) return;
+    this.perfAcc += realDt;
+    this.perfN++;
+    this.perfCool -= realDt;
+    if (this.perfAcc < 2) return;
+    this.fps = this.perfN / this.perfAcc;
+    this.perfAcc = 0;
+    this.perfN = 0;
+    const q = this.pipeline.quality;
+    if (this.autoQuality && this.perfCool <= 0 && this.fps < 48 && q < 3 && this.state !== 'paused') {
+      this.applyQuality((q + 1) as Quality);
+      this.perfCool = 4;
+      this.hud.toast(`Qualidade ${QUALITY_NAMES[q + 1]} (auto) · P troca`, 2.2);
+    }
   }
 
   private disposeWorld(): void {
@@ -160,14 +231,18 @@ export class Game implements GameCtx {
     this.hitstopT = 0;
     this.slowmoT = 0;
     this.flashT = 0;
+    this.killCam = null;
+    this.cam.focus = 0;
+    document.body.classList.remove('killcam');
     this.hurtV = 0;
   }
 
   spawnZombie(type: ZombieType, x: number, z: number, variant = rng.int(0, 5)): Zombie {
     const zb = new Zombie(this, this.nav, this.player, type, x, z, variant);
-    zb.onDeath = () => {
+    zb.onDeath = (z) => {
       this.killed++;
       this.hud.setObjective(this.objectiveText(), `${this.killed}/${this.total}`);
+      if (this.state === 'playing' && this.player.alive && this.total > 0 && this.killed >= this.total) this.startKillCam(z);
     };
     this.zombies.push(zb);
     this.total++;
@@ -195,12 +270,13 @@ export class Game implements GameCtx {
       zb.alert();
     }
     this.clearedT = -1;
+    this.nextWaveT = -1;
     this.hud.toast(`Horda ${this.wave}! ${n} zumbis`);
     sfx.groan(this.player.pos, 0.8);
   }
 
   private objectiveText(): string {
-    if (this.clearedT >= 0) return 'Fazenda limpa! · N: nova horda';
+    if (this.clearedT >= 0) return this.nextWaveT > 0 ? `Horda ${this.wave + 1} em ${Math.ceil(this.nextWaveT)}s · N: já` : 'Fazenda limpa!';
     return this.wave === 1 ? 'Limpe a fazenda' : `Horda ${this.wave}`;
   }
 
@@ -249,7 +325,25 @@ export class Game implements GameCtx {
     this.pickups.push(new Pickup(this, kind, pos.clone()));
   }
 
-  explode(pos: THREE.Vector3, power: number): void {
+  feat(text: string, pos?: THREE.Vector3): void {
+    let x = window.innerWidth / 2;
+    let y = window.innerHeight * 0.3;
+    if (pos) {
+      const v = pos.clone().project(this.cam.camera);
+      x = clamp((v.x * 0.5 + 0.5) * window.innerWidth, 90, window.innerWidth - 90);
+      y = clamp((-v.y * 0.5 + 0.5) * window.innerHeight - 40, 70, window.innerHeight - 90);
+    }
+    this.hud.feat(text, x, y);
+  }
+
+  private startKillCam(z: Zombie): void {
+    this.killCam = { t: 0, z };
+    this.slowmo(0.16, 2.1);
+    document.body.classList.add('killcam');
+    sfx.slowmo();
+  }
+
+  explode(pos: THREE.Vector3, power: number, source?: BlastSource): void {
     this.fx.explosion(pos, power);
     sfx.explosion(pos);
     this.shake(0.9 * power);
@@ -260,10 +354,15 @@ export class Game implements GameCtx {
     GLOBAL_UNIFORMS.uGustStrength.value = 1.4 * power;
     this.physics.blast(pos, 7.5 * power, 15 * power);
     const R = 7.5 * power;
+    let kills = 0;
     for (const z of this.zombies) {
       if (z.removed) continue;
       const d = Math.hypot(z.pos.x - pos.x, z.pos.z - pos.z);
-      if (d < R) z.blast(pos, 1 - d / R);
+      if (d < R && z.blast(pos, 1 - d / R)) kills++;
+    }
+    if (kills > 0 && source) {
+      const label = source === 'propane' ? 'BOTIJÃO!' : source === 'truck' ? 'CAMINHONETE!' : 'KABUM!';
+      this.feat(kills > 1 ? `${label} ×${kills}` : label, pos.clone().setY(1.6));
     }
     if (this.player.alive) {
       const d = Math.hypot(this.player.pos.x - pos.x, this.player.pos.z - pos.z);
@@ -329,13 +428,7 @@ export class Game implements GameCtx {
       if (this.test) return; // driven manually
       this.tick(realDt);
       this.render();
-      this.fpsAcc += realDt;
-      this.fpsN++;
-      if (this.fpsAcc > 0.5) {
-        this.fps = this.fpsN / this.fpsAcc;
-        this.fpsAcc = 0;
-        this.fpsN = 0;
-      }
+      this.trackPerf(realDt);
     };
     requestAnimationFrame(loop);
   }
@@ -369,6 +462,10 @@ export class Game implements GameCtx {
       reload: inp.pressed('KeyR'),
       dodge: inp.pressed('Space') || inp.pressed('ShiftLeft'),
       switchTo,
+      kick: inp.pressed('KeyF') || inp.pressed('KeyV'),
+      throwHeld: inp.down('KeyG'),
+      throwPressed: inp.pressed('KeyG'),
+      throwReleased: inp.released('KeyG'),
     };
   }
 
@@ -406,6 +503,8 @@ export class Game implements GameCtx {
       return;
     }
     if (inp.pressed('KeyN') && this.state === 'playing') this.spawnWave();
+    if (inp.pressed('KeyP')) this.cycleQuality();
+    if (inp.pressed('KeyI')) this.showFps = !this.showFps;
 
     // --- time scaling (hit-stop freezes the world, camera keeps shaking)
     let scale = 1;
@@ -458,6 +557,7 @@ export class Game implements GameCtx {
     // --- physics & world
     this.physics.update(dt);
     for (const u of this.updatables) u.update(dt, this.time);
+    this.updatables = this.updatables.filter((u) => !u.dead);
     this.farm.update(dt, this.time);
     for (const p of this.pickups) {
       const msg = p.update(dt, this.player);
@@ -482,9 +582,18 @@ export class Game implements GameCtx {
     if (this.state === 'playing' && this.total > 0 && this.killed >= this.total && this.clearedT < 0) {
       this.clearedT = 0;
       sfx.music?.stinger('clear');
-      this.hud.toast('Fazenda limpa! ✿', 3);
+      this.hud.toast('Fazenda limpa! ✿ Mais zumbis vêm aí…', 3);
+      this.nextWaveT = 10;
       this.hud.setObjective(this.objectiveText(), `${this.killed}/${this.total}`);
       this.spawnPickup('pie', this.player.pos.clone().add(new THREE.Vector3(1.5, 0.3, 1.5)));
+      if (this.player.dynamite < this.player.maxDynamite) this.spawnPickup('dynamite', this.player.pos.clone().add(new THREE.Vector3(-1.5, 0.3, 1.2)));
+    }
+    // the next horde comes on its own (N skips the wait)
+    if (this.state === 'playing' && this.nextWaveT > 0) {
+      this.nextWaveT -= dt;
+      if (this.nextWaveT <= 3 && this.nextWaveT + dt > 3) sfx.groan(this.player.pos.clone().add(new THREE.Vector3(12, 0, -8)), 0.8);
+      if (this.nextWaveT <= 0) this.spawnWave();
+      else this.hud.setObjective(this.objectiveText(), `${this.killed}/${this.total}`);
     }
     if (this.state === 'dead') {
       this.deadT += realDt;
@@ -495,8 +604,25 @@ export class Game implements GameCtx {
     }
 
     // --- camera, light, audio, hud
-    const follow = this.player.alive ? this.player.pos : this.player.pos.clone();
-    const look = this.state === 'playing' && this.player.alive ? this.aimPoint : null;
+    let follow = this.player.alive ? this.player.pos : this.player.pos.clone();
+    let look: THREE.Vector3 | null = this.state === 'playing' && this.player.alive ? this.aimPoint : null;
+    if (this.killCam) {
+      // kill-cam: frame the player and the last body, pull in, letterbox
+      const kc = this.killCam;
+      kc.t += realDt;
+      const f = kc.t < 0.25 ? kc.t / 0.25 : kc.t < 1.7 ? 1 : Math.max(0, 1 - (kc.t - 1.7) / 0.5);
+      this.cam.focus = f * f * (3 - 2 * f);
+      this.cam.focusPoint.lerpVectors(this.player.pos, kc.z.pos, 0.6);
+      this.cam.focusZoom = 10;
+      if (kc.t > 1.9) document.body.classList.remove('killcam');
+      if (kc.t > 2.2 || !this.player.alive) {
+        this.killCam = null;
+        this.cam.focus = 0;
+        document.body.classList.remove('killcam');
+      }
+      follow = this.player.pos;
+      look = null;
+    }
     let rot = 0;
     if (inp.down('KeyQ')) rot -= 1;
     if (inp.down('KeyE')) rot += 1;
@@ -526,6 +652,7 @@ export class Game implements GameCtx {
     const mx = inp.mouse.x;
     const my = inp.mouse.y;
     this.hud.update(realDt, this.player, mx, my);
+    this.hud.setFps(this.showFps ? `${Math.round(this.fps)} fps · ${QUALITY_NAMES[this.pipeline.quality]}` : null);
     inp.endFrame();
   }
 

@@ -200,6 +200,130 @@ body.playing #app canvas {
   font-size: 22px;
 }
 
+.hud-fps {
+  position: absolute;
+  left: 24px;
+  top: 58px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--cream);
+  text-shadow:
+    0 1px 0 var(--brown),
+    1px 0 0 var(--brown),
+    -1px 0 0 var(--brown),
+    0 -1px 0 var(--brown);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-dyn {
+  position: absolute;
+  right: 26px;
+  bottom: 74px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--cream);
+  font-weight: 800;
+  font-size: 20px;
+  text-shadow:
+    0 2px 0 var(--brown),
+    2px 0 0 var(--brown),
+    -2px 0 0 var(--brown),
+    0 -2px 0 var(--brown);
+  filter: drop-shadow(0 2px 4px rgba(80, 40, 30, 0.35));
+}
+
+.hud-dyn .dyn-icon {
+  display: flex;
+}
+
+.hud-dyn .dyn-key {
+  margin-left: 4px;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(255, 246, 230, 0.85);
+  color: var(--brown);
+  text-shadow: none;
+}
+
+.hud-dyn.empty {
+  opacity: 0.45;
+  filter: grayscale(0.8);
+}
+
+.hud-dyn.bump {
+  animation: weapon-swap 0.35s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+
+/* environmental kill labels: pop, wobble, float up */
+.hud-feat {
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(var(--tilt, 0deg));
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #fff3d6;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow:
+    0 3px 0 #c9483c,
+    3px 0 0 #c9483c,
+    -3px 0 0 #c9483c,
+    0 -3px 0 #c9483c,
+    2px 2px 0 #c9483c,
+    -2px -2px 0 #c9483c,
+    2px -2px 0 #c9483c,
+    -2px 2px 0 #c9483c,
+    0 6px 10px rgba(60, 30, 20, 0.45);
+  animation: feat-pop 1.4s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
+}
+
+@keyframes feat-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--tilt, 0deg)) scale(0.2);
+  }
+  12% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(var(--tilt, 0deg)) scale(1.25);
+  }
+  24% {
+    transform: translate(-50%, -50%) rotate(var(--tilt, 0deg)) scale(1);
+  }
+  75% {
+    opacity: 1;
+    transform: translate(-50%, -110%) rotate(var(--tilt, 0deg)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -160%) rotate(var(--tilt, 0deg)) scale(0.9);
+  }
+}
+
+/* kill-cam letterbox */
+.hud-bars i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  background: #2b2226;
+  transition: height 0.35s cubic-bezier(0.3, 0.8, 0.3, 1);
+  z-index: -1;
+}
+
+.hud-bars i:first-child {
+  top: 0;
+}
+
+.hud-bars i:last-child {
+  bottom: 0;
+}
+
+body.killcam .hud-bars i {
+  height: 9vh;
+}
+
 .hud-toast {
   position: absolute;
   top: 68px;

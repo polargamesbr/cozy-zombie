@@ -62,7 +62,18 @@ Uma pequena fazenda de ~62 × 48 m (`src/world/layout.ts`):
 - **Dano localizado**: tiro na perna faz o zumbi mancar; mais dano nas pernas (ou espingarda nelas)
   derruba e ele passa a **rastejar** (lento, baixo, difícil de acertar). Espingarda de perto pode
   **arrancar um braço** (o coto sangra, o braço quica no chão). Chapéus voam em headshots e mortes.
-- Objetivo: limpar a fazenda (5 zumbis). Depois, `N` chama hordas maiores.
+- Objetivo: limpar a fazenda (5 zumbis). Depois as hordas vêm sozinhas (contagem de 10 s no
+  objetivo; `N` chama na hora), cada uma maior. Ao limpar: torta (+2 ❤) e uma dinamite.
+- **Chute (F)**: derruba zumbis na frente e os arremessa (em cercas, no lago, em outros zumbis);
+  chuta corpos e props. Brutos só cambaleiam.
+- **Dinamite (G)**: segurar mostra o arco previsto (pontos que andam, anel de pouso e anel de
+  explosão); soltar arremessa. Quica, rola, chia e explode após ~1,9 s. Começa com 3 (máx. 5);
+  caixas e o fim de cada horda dão mais.
+- **Mortes pelo ambiente**: zumbi derrubado que cai no lago se afoga (corpos boiam e afundam);
+  botijões explodem; a caminhonete, se levar tiros (a tampa do tanque vale 5×), solta fumaça,
+  pega fogo e explode, virando sucata fumegante. Cada uma tem um rótulo ("AFOGADO!",
+  "BOTIJÃO!", "KABUM!", "CAMINHONETE!", "CHUTE!").
+- **Kill-cam**: o último zumbi da horda cai em câmera lenta, com zoom e barras de cinema.
 - Pickups: munição em caixas quebradas, torta (+2 corações) ao limpar a fazenda.
 
 ## Feel & Juice
@@ -110,5 +121,9 @@ marcador de acerto e anel de recarga.
 | Q / E ou botão direito arrastando | girar a câmera |
 | Roda do mouse | zoom |
 | M | som liga/desliga |
+| F | chutar |
+| G (segurar / soltar) | mirar e arremessar dinamite |
 | Esc | pausa |
-| N | nova horda |
+| N | chamar a próxima horda agora |
+| P | qualidade gráfica (Ultra / Alta / Média / Baixa) |
+| I | mostrar FPS |
