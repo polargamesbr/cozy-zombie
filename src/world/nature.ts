@@ -337,6 +337,7 @@ function grassMaterial(): THREE.MeshToonMaterial {
 
 export function createGrass(): THREE.Group {
   const group = new THREE.Group();
+  group.userData.noAO = true;
   const r = new Rng(4242);
   const mat = grassMaterial();
   const variants = [
@@ -379,6 +380,7 @@ export function createGrass(): THREE.Group {
 /** Garden flowers + meadow flower clumps (stems and heads as two instanced meshes). */
 export function createFlowers(): THREE.Group {
   const group = new THREE.Group();
+  group.userData.noAO = true;
   const r = new Rng(99);
   const spots: { x: number; z: number; col: number; h: number }[] = [];
   // garden beds
@@ -424,6 +426,7 @@ export function createFlowers(): THREE.Group {
 /** Reeds and cattails around the pond. */
 export function createReeds(): THREE.Group {
   const group = new THREE.Group();
+  group.userData.noAO = true;
   const r = new Rng(31337);
   const p = LAYOUT.pond;
   const reedGeo = grassTuftGeometry(5, 0.9, 0.08, 5, new THREE.Color(0x7f9a55), new THREE.Color(0xc3cf86));

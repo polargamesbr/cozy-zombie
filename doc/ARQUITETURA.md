@@ -65,9 +65,14 @@ src/
   shader próprio que também recebe até 10 "empurradores" (jogador/zumbis) e a rajada de explosões.
 - Personagens: 3 draw calls por junta (malha, contorno por casco invertido, silhueta X-ray). A
   silhueta usa stencil: o corpo visível escreve 1; o X-ray desenha só onde está oculto (`GreaterDepth`) e o stencil ≠ 1.
-- Pós: `RenderPass` (MSAA 4x, HalfFloat, stencil) → bloom com threshold alto (só HDR: muzzle,
-  lâmpadas, fogo) → grade (tinta quente, saturação, vinheta, flash e vermelho de dano) → `OutputPass`
-  (Neutral tone mapping + sRGB).
+- Pós: `RenderPass` (MSAA 4x, HalfFloat, stencil) → `GTAOPass` em meia resolução (objetos com
+  `userData.noAO` ficam de fora) → `AtmospherePass` (névoa baixa ray-marched contra o shadow map do
+  sol, reaproveitando a profundidade do AO; névoa de altura) → bloom com threshold alto (só HDR:
+  muzzle, lâmpadas, fogo) → grade (tinta quente, saturação, curva S, vinheta, flash e vermelho de
+  dano) → `OutputPass` (Neutral tone mapping + sRGB) → SMAA. `?low` remove AO, atmosfera e MSAA.
+- Personagens têm rim light quente (mais forte do lado do sol, `addRim`). Partículas de fumaça são
+  iluminadas como pequenas esferas e somem suavemente ao cruzar o chão. Decals usam material toon
+  instanciado (recebem luz e sombra como o chão).
 
 ## Física
 

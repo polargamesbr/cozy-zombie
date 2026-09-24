@@ -39,7 +39,9 @@ function buildPickup(kind: PickupKind): THREE.Group {
   const m = new THREE.Mesh(geo, vcToon());
   m.castShadow = true;
   grp.add(m);
-  grp.add(new THREE.Mesh(geo, outlineMaterial(0x3b2a2e, 0.015)));
+  const ol = new THREE.Mesh(geo, outlineMaterial(0x3b2a2e, 0.015));
+  ol.userData.noAO = true;
+  grp.add(ol);
   return grp;
 }
 

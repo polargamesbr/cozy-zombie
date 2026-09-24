@@ -121,6 +121,7 @@ export class Effects {
   readonly tracers = new Tracers();
   readonly leaves = new Leaves();
   readonly group = new THREE.Group();
+  readonly lights = new THREE.Group();
   private time = 0;
   readonly muzzleLight: THREE.PointLight;
   readonly boomLight: THREE.PointLight;
@@ -129,9 +130,12 @@ export class Effects {
 
   constructor() {
     this.group.add(this.particles.group, this.decals.group, this.debris.group, this.tracers.group, this.leaves.mesh);
+    // effects never contribute to ambient occlusion
+    this.group.userData.noAO = true;
     this.muzzleLight = new THREE.PointLight(0xffc36b, 0, 6, 2);
     this.boomLight = new THREE.PointLight(0xffa24d, 0, 13, 2);
-    this.group.add(this.muzzleLight, this.boomLight);
+    // lights live outside the fx group so hiding effects for AO never changes the light setup
+    this.lights.add(this.muzzleLight, this.boomLight);
     this.particles.drops.onLand = (pos, vel, kind, size) => {
       if (kind === 0) {
         if (rng.chance(0.45)) return;

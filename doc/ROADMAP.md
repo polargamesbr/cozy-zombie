@@ -27,10 +27,10 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
    - [x] Música procedural: violão (Karplus–Strong) + kalimba em Ré maior que vira Ré menor com bateria e baixo pulsante no combate; vinhetas de vitória e morte
    - [x] Panner HRTF, abafamento de sons atrás de paredes
 2. **Luz e pós-processamento**
-   - [ ] AO suave (GTAO) + rim light nos personagens para destacar silhuetas
-   - [ ] Raios de sol de fim de tarde (god rays em pós) e névoa de altura
-   - [ ] Partículas "soft" (fade por profundidade), fumaça iluminada pelo sol
-   - [ ] Manchas de sangue iluminadas (recebem sombra) e SMAA para bordas limpas
+   - [x] AO suave (GTAO em meia resolução, sem partículas/grama/contornos) + rim light quente nos personagens
+   - [x] Névoa baixa ray-marched contra o shadow map do sol (feixes de luz/sombra) + névoa de altura
+   - [x] Partículas "soft" (somem suavemente ao cruzar o chão), fumaça iluminada pelo sol
+   - [x] Manchas de sangue iluminadas (recebem sombra) e SMAA para bordas limpas; `?low` desliga AO/névoa/MSAA
 3. **Animação e reações**
    - [ ] Membros com cotovelo/joelho (IK de 2 ossos) e movimento secundário (chapéu, cabelo, mochila)
    - [ ] Reações localizadas: tiro na perna → zumbi manca/rasteja; espingarda pode arrancar braço

@@ -113,6 +113,8 @@ export function buildGun(id: WeaponId): THREE.Group {
   const mesh = new THREE.Mesh(geo, vcToon());
   mesh.castShadow = true;
   group.add(mesh);
-  group.add(new THREE.Mesh(geo, outlineMaterial(0x2b2226, 0.012)));
+  const ol = new THREE.Mesh(geo, outlineMaterial(0x2b2226, 0.012));
+  ol.userData.noAO = true;
+  group.add(ol);
   return group;
 }

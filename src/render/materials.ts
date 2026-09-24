@@ -7,6 +7,8 @@ export const GLOBAL_UNIFORMS = {
   /** A radial gust (explosions, shotgun blasts): xyz = world pos, w = start time. */
   uGust: { value: new THREE.Vector4(0, 0, 0, -100) },
   uGustStrength: { value: 0 },
+  /** Sun direction in view space (updated every frame) for rim lights and lit particles. */
+  uSunView: { value: new THREE.Vector3(0, 1, 0) },
 };
 
 let rampTexture: THREE.DataTexture | null = null;
@@ -164,4 +166,32 @@ export function basic(color: number, opts: { transparent?: boolean; opacity?: nu
     depthWrite: !(opts.transparent || opts.additive),
     toneMapped: !opts.additive,
   });
+}
+
+/**
+ * Warm rim light (stronger on the side facing the sun) so characters pop off the grass.
+ * Chains with any existing onBeforeCompile.
+ */
+export function addRim(m: THREE.Material, color: THREE.ColorRepresentation, strength: number): void {
+  const prev = m.onBeforeCompile;
+  const rimColor = new THREE.Color(color).multiplyScalar(strength);
+  m.onBeforeCompile = (shader, renderer) => {
+    prev.call(m, shader, renderer);
+    shader.uniforms.uSunView = GLOBAL_UNIFORMS.uSunView;
+    shader.uniforms.uRimColor = { value: rimColor };
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uSunView;\nuniform vec3 uRimColor;')
+      .replace(
+        '#include <opaque_fragment>',
+        `{
+           vec3 rimV = normalize(vViewPosition);
+           float rimF = 1.0 - clamp(dot(normal, rimV), 0.0, 1.0);
+           float sunF = clamp(dot(normal, uSunView) * 0.5 + 0.5, 0.0, 1.0);
+           outgoingLight += uRimColor * pow(rimF, 3.0) * (0.3 + 0.7 * sunF);
+         }
+         #include <opaque_fragment>`,
+      );
+  };
+  const prevKey = m.customProgramCacheKey.bind(m);
+  m.customProgramCacheKey = () => prevKey() + '|rim';
 }

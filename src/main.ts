@@ -6,6 +6,8 @@ const params = new URLSearchParams(location.search);
 const test = params.has('test');
 const seed = params.has('seed') ? Number(params.get('seed')) : test ? 12345 : undefined;
 
-const game = new Game(document.getElementById('app')!, { test, seed });
+const low = params.has('low');
+
+const game = new Game(document.getElementById('app')!, { test, seed, low });
 installTestApi(game);
 game.start();

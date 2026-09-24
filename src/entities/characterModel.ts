@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PAL } from '../render/palette';
 import { blob, capsule, cyl, GeoBuilder, rbox, sphere } from '../render/geometry';
-import { outlineMaterial, toonUnique } from '../render/materials';
+import { addRim, outlineMaterial, toonUnique } from '../render/materials';
 import { faceTexture, softCircleTexture, type FaceKind } from '../render/textures';
 import { J, JOINT_COUNT, Ragdoll } from '../physics/ragdoll';
 
@@ -96,6 +96,7 @@ export class CharacterModel {
     };
     // one vertex-colored material per character (so hit flashes are per character)
     const bodyMat = stencil(toonUnique(0xffffff, { vertexColors: true })) as THREE.MeshToonMaterial;
+    addRim(bodyMat, 0xffdca0, 0.55);
     this.mats.push(bodyMat);
     // parts are accumulated per joint and merged into one mesh each: 3 draw calls per joint
     const builders = new Map<THREE.Object3D, { plain: GeoBuilder; outlined: GeoBuilder }>();
@@ -112,9 +113,14 @@ export class CharacterModel {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       parent.add(mesh);
-      if (withOutline) parent.add(new THREE.Mesh(geo, outline));
+      if (withOutline) {
+        const o = new THREE.Mesh(geo, outline);
+        o.userData.noAO = true;
+        parent.add(o);
+      }
       const x = new THREE.Mesh(geo, xray);
       x.renderOrder = 50;
+      x.userData.noAO = true;
       parent.add(x);
       this.xrayMeshes.push(x);
     };
@@ -183,6 +189,7 @@ export class CharacterModel {
     this.head.position.set(0, DIMS.headY * s, 0);
     this.faceKind = style.face;
     this.headMat = stencil(toonUnique(0xffffff, { map: faceTexture(style.face, style.skin, style.faceVariant) })) as THREE.MeshToonMaterial;
+    addRim(this.headMat, 0xffdca0, 0.55);
     this.mats.push(this.headMat);
     const hg = new THREE.SphereGeometry(DIMS.headR * s, 32, 22);
     hg.scale(1.02, 0.94, 0.96);
@@ -221,6 +228,7 @@ export class CharacterModel {
     sh.scale.setScalar(0.85 * s * (style.belly ?? 1));
     sh.position.y = 0.02;
     sh.renderOrder = 2;
+    sh.userData.noAO = true;
     this.shadow = sh;
   }
 

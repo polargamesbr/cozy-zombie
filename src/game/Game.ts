@@ -27,6 +27,8 @@ type GameState = 'title' | 'playing' | 'paused' | 'dead';
 export interface GameOptions {
   test?: boolean;
   seed?: number;
+  /** Skip AO, atmosphere and MSAA for slower GPUs. */
+  low?: boolean;
 }
 
 export class Game implements GameCtx {
@@ -78,14 +80,15 @@ export class Game implements GameCtx {
     this.test = !!opts.test;
     if (opts.seed !== undefined) rng.seed(opts.seed);
     this.cam = new CameraRig(window.innerWidth / window.innerHeight);
-    this.pipeline = new RenderPipeline(container, this.scene, this.cam.camera, { preserveDrawingBuffer: this.test });
+    this.pipeline = new RenderPipeline(container, this.scene, this.cam.camera, { preserveDrawingBuffer: this.test, lowQuality: !!opts.low });
     this.lighting = new Lighting(this.scene);
+    this.pipeline.enableAtmosphere(this.lighting.sun);
     this.input = new Input(this.pipeline.domElement);
     this.hud = new Hud(document.body);
     this.overlay = new Overlay(document.body);
     this.overlay.onAction = (mode) => this.onOverlay(mode);
     this.scene.add(this.root);
-    this.scene.add(this.fx.group);
+    this.scene.add(this.fx.group, this.fx.lights);
     this.buildWorld();
     window.addEventListener('blur', () => {
       if (this.state === 'playing' && !this.test) this.pause();
@@ -498,6 +501,7 @@ export class Game implements GameCtx {
     if (inp.down('KeyE')) rot += 1;
     this.cam.update(follow, look, rot, inp.orbitDX, inp.wheel, realDt);
     this.lighting.update(this.cam.target);
+    GLOBAL_UNIFORMS.uSunView.value.copy(this.lighting.sunDir).transformDirection(this.cam.camera.matrixWorldInverse);
     sfx.setListener(this.cam.target, this.cam.right);
     // music follows the danger: alerted zombies nearby push it toward the tense mix
     if (sfx.music) {

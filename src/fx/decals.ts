@@ -1,38 +1,54 @@
 import * as THREE from 'three';
 import { rng } from '../core/rng';
 import { bulletHoleTexture, scorchTexture, splatAtlas } from '../render/textures';
+import { toonRamp } from '../render/materials';
 
-const vert = /* glsl */ `
-  attribute vec4 iColor; // rgb, alpha
-  attribute float iCell;
-  varying vec2 vUv;
-  varying vec4 vColor;
-  #include <fog_pars_vertex>
-  void main() {
-    vColor = iColor;
-    float cols = 4.0;
-    vec2 cell = vec2(mod(iCell, cols), cols - 1.0 - floor(iCell / cols));
-    vUv = (uv + cell) / cols;
-    vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-    gl_Position = projectionMatrix * mvPosition;
-    #include <fog_vertex>
-  }
-`;
-
-const frag = /* glsl */ `
-  uniform sampler2D uMap;
-  uniform vec3 uLightTint;
-  varying vec2 vUv;
-  varying vec4 vColor;
-  #include <fog_pars_fragment>
-  void main() {
-    vec4 t = texture2D(uMap, vUv);
-    float a = t.a * vColor.a;
-    if (a < 0.02) discard;
-    gl_FragColor = vec4(vColor.rgb * t.rgb * uLightTint, a);
-    #include <fog_fragment>
-  }
-`;
+/**
+ * Toon-lit decal material: the same lighting and shadows as the ground under it, plus a
+ * per-instance tint, alpha and atlas cell.
+ */
+function decalMaterial(tex: THREE.Texture, cols: number, order: number): THREE.MeshToonMaterial {
+  const m = new THREE.MeshToonMaterial({
+    map: tex,
+    gradientMap: toonRamp(),
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2 - order,
+    polygonOffsetUnits: -2 - order,
+  });
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+         attribute vec4 iColor;
+         attribute float iCell;
+         varying vec4 vDecal;`,
+      )
+      .replace(
+        '#include <uv_vertex>',
+        `#include <uv_vertex>
+         {
+           float cols = ${cols.toFixed(1)};
+           vec2 cell = vec2(mod(iCell, cols), cols - 1.0 - floor(iCell / cols));
+           vMapUv = (uv + cell) / cols;
+           vDecal = iColor;
+         }`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec4 vDecal;')
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+         diffuseColor.rgb *= vDecal.rgb;
+         diffuseColor.a *= vDecal.a;
+         if (diffuseColor.a < 0.02) discard;`,
+      );
+  };
+  m.customProgramCacheKey = () => `decal-${cols}`;
+  return m;
+}
 
 interface Decal {
   alive: boolean;
@@ -75,22 +91,12 @@ export class DecalLayer {
     this.iCell = new THREE.InstancedBufferAttribute(new Float32Array(max), 1);
     geo.setAttribute('iColor', this.iColor);
     geo.setAttribute('iCell', this.iCell);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uMap: { value: tex }, uLightTint: { value: new THREE.Color(1, 1, 1) } }]),
-      vertexShader: atlas ? vert : vert.replace('float cols = 4.0;', 'float cols = 1.0;'),
-      fragmentShader: frag,
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2 - order,
-      polygonOffsetUnits: -2 - order,
-      fog: true,
-    });
-    mat.uniforms.uMap.value = tex;
+    const mat = decalMaterial(tex, atlas ? 4 : 1, order);
     this.mesh = new THREE.InstancedMesh(geo, mat, max);
     this.mesh.count = 0;
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 1 + order;
+    this.mesh.receiveShadow = true;
     for (let i = 0; i < max; i++) {
       this.decals.push({
         alive: false,
@@ -107,10 +113,6 @@ export class DecalLayer {
         quat: new THREE.Quaternion(),
       });
     }
-  }
-
-  set lightTint(c: THREE.Color) {
-    (this.mesh.material as THREE.ShaderMaterial).uniforms.uLightTint.value.copy(c);
   }
 
   /**

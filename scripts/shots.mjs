@@ -47,6 +47,20 @@ const shot = async (name) => {
 };
 
 const scenarios = {
+  async trees() {
+    await g(() => {
+      __game.teleport(-17, 3, 2.4);
+      __game.camera({ yaw: 2.6, zoom: 19 });
+      __game.aim(-19, -2);
+      __game.advance(0.8);
+    });
+    await shot('trees-backlit');
+    await g(() => {
+      __game.camera({ yaw: -0.4, zoom: 19 });
+      __game.advance(0.4);
+    });
+    await shot('trees-front');
+  },
   async audio() {
     await g(() => __game.audio.unlock());
     await page.waitForTimeout(800);

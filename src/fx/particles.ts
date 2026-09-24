@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { rng } from '../core/rng';
 import { flashTexture, puffTexture, ringTexture, softCircleTexture } from '../render/textures';
-import { toonUnique } from '../render/materials';
+import { GLOBAL_UNIFORMS, toonUnique } from '../render/materials';
 
 /** Atlas cells used by billboard particles. */
 export const TEX = { puff: 0, soft: 1, star: 2, ring: 3 } as const;
@@ -28,6 +28,10 @@ const vert = /* glsl */ `
   attribute vec3 iVel;
   varying vec2 vUv;
   varying vec4 vColor;
+  varying float vWorldY;
+  varying float vSize;
+  varying float vCell;
+  varying vec2 vQ;
   #include <fog_pars_vertex>
   void main() {
     vColor = iColor;
@@ -52,6 +56,10 @@ const vert = /* glsl */ `
       offset = vec2(c * corner.x - s * corner.y, s * corner.x + c * corner.y) * size;
     }
     mvPosition.xy += offset;
+    vQ = offset / max(size * 0.5, 1e-4);
+    vSize = size;
+    vCell = cell;
+    vWorldY = (transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz)).y;
     gl_Position = projectionMatrix * mvPosition;
     #include <fog_vertex>
   }
@@ -59,14 +67,29 @@ const vert = /* glsl */ `
 
 const frag = /* glsl */ `
   uniform sampler2D uMap;
+  uniform vec3 uSunView;
   varying vec2 vUv;
   varying vec4 vColor;
+  varying float vWorldY;
+  varying float vSize;
+  varying float vCell;
+  varying vec2 vQ;
   #include <fog_pars_fragment>
   void main() {
     vec4 t = texture2D(uMap, vUv);
-    float a = t.a * vColor.a;
+    // soft particles: fade out where the billboard slices into the ground (rings lie on it)
+    float soft = vCell > 2.5 ? 1.0 : smoothstep(0.0, max(vSize * 0.35, 0.04), vWorldY);
+    float a = t.a * vColor.a * soft;
     if (a < 0.01) discard;
-    gl_FragColor = vec4(t.rgb * vColor.rgb, a);
+    vec3 col = t.rgb * vColor.rgb;
+    #ifdef LIT
+      // treat each puff as a little sphere lit by the low sun
+      vec2 q = clamp(vQ, -1.0, 1.0);
+      vec3 n = normalize(vec3(q, sqrt(max(0.0, 1.0 - dot(q, q))) + 0.25));
+      float l = dot(n, uSunView) * 0.5 + 0.5;
+      col *= mix(vec3(0.76, 0.79, 0.95), vec3(1.12, 1.0, 0.86), l);
+    #endif
+    gl_FragColor = vec4(col, a);
     #include <fog_fragment>
   }
 `;
@@ -151,7 +174,8 @@ export class BillboardSystem {
     geo.instanceCount = 0;
     this.geo = geo;
     const mat = new THREE.ShaderMaterial({
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uMap: { value: atlas } }]),
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uMap: { value: atlas }, uSunView: { value: new THREE.Vector3(0, 1, 0) } }]),
+      defines: additive ? {} : { LIT: 1 },
       vertexShader: vert,
       fragmentShader: frag,
       transparent: true,
@@ -160,6 +184,7 @@ export class BillboardSystem {
       fog: true,
     });
     mat.uniforms.uMap.value = atlas;
+    mat.uniforms.uSunView = GLOBAL_UNIFORMS.uSunView;
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = additive ? 20 : 10;
