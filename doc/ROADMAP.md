@@ -19,7 +19,35 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
 - [x] HUD mínimo + telas de título/pausa/morte
 - [x] API de teste + screenshots headless + testes de física + CI
 
-## Próximas iterações (backlog priorizado)
+## v0.2 — Rumo ao "AAA estilizado" (ordem recomendada)
+
+1. **Som e música** (maior ganho percebido por esforço)
+   - [ ] Reverb por convolução com resposta de impulso gerada por código (ar livre / perto do celeiro)
+   - [ ] Tiros em camadas (estalo + corpo + cauda + eco atrasado), variação de pitch por disparo
+   - [ ] Música procedural: tema cozy (violão/marimba sintetizados) que cruza para uma versão tensa no combate
+   - [ ] Panner HRTF, abafamento de sons atrás de paredes
+2. **Luz e pós-processamento**
+   - [ ] AO suave (GTAO) + rim light nos personagens para destacar silhuetas
+   - [ ] Raios de sol de fim de tarde (god rays em pós) e névoa de altura
+   - [ ] Partículas "soft" (fade por profundidade), fumaça iluminada pelo sol
+   - [ ] Manchas de sangue iluminadas (recebem sombra) e SMAA para bordas limpas
+3. **Animação e reações**
+   - [ ] Membros com cotovelo/joelho (IK de 2 ossos) e movimento secundário (chapéu, cabelo, mochila)
+   - [ ] Reações localizadas: tiro na perna → zumbi manca/rasteja; espingarda pode arrancar braço
+   - [ ] Rostos: piscar, susto ao tomar dano, zumbi abrindo a boca antes do ataque
+4. **Verbos de combate**
+   - [ ] Chute/empurrão corpo a corpo (joga zumbis em cercas, no lago, em outros zumbis)
+   - [ ] Dinamite arremessável com arco previsto
+   - [ ] Kill-cam em câmera lenta no último zumbi da horda
+   - [ ] Mortes pelo ambiente: empurrar para o lago, botijão, caminhonete
+5. **Inimigos e estrutura**
+   - [ ] Zumbis que pulam/derrubam cercas, horda saindo do celeiro com a porta explodindo, rastejantes
+   - [ ] Um dia na fazenda: tarde → pôr do sol → noite, hordas entre fases, consertar cercas entre ondas
+6. **Técnico**
+   - [ ] 60 fps estáveis: merge de cercas/props, LOD da grama, opções de qualidade, contador de FPS
+   - [ ] Suporte a controle com vibração
+
+## Backlog anterior
 
 1. **Polimento visual**
    - [ ] Ciclo de tempo do dia opcional (tarde → pôr do sol → noite com vaga-lumes e luzes acesas)
