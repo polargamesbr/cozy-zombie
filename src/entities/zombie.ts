@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, dampAngle, Spring } from '../core/math';
+import { clamp, dampAngle, lerp, Spring } from '../core/math';
 import { rng } from '../core/rng';
 import { PAL } from '../render/palette';
 import { CharacterModel, DIMS, type CharacterStyle, type Side } from './characterModel';
@@ -8,11 +8,12 @@ import type { CharacterBody } from '../physics/world';
 import type { GameCtx, GrassPusher, NoiseListener } from '../game/context';
 import type { NavGrid } from '../world/navgrid';
 import { inPond, LAYOUT } from '../world/layout';
+import { FenceSegment } from '../world/fences';
 import { pondPush } from '../world/pond';
 import { sfx } from '../audio/sfx';
 import type { Player } from './player';
 
-export type ZombieType = 'shambler' | 'runner' | 'brute';
+export type ZombieType = 'shambler' | 'runner' | 'brute' | 'crawler';
 
 /** Where a bullet landed on a standing zombie. */
 export type HitPart = 'head' | 'torso' | 'legL' | 'legR' | 'armL' | 'armR';
@@ -37,6 +38,8 @@ const ZDEFS: Record<ZombieType, ZDef> = {
   shambler: { hp: 4, speed: 1.6, accel: 6, radius: 0.34, mass: 1, damage: 1, windup: 0.45, reach: 1.05, knock: 1, launch: 1, pitch: 1 },
   runner: { hp: 2.6, speed: 3.7, accel: 10, radius: 0.3, mass: 0.75, damage: 1, windup: 0.3, reach: 1.0, knock: 1.25, launch: 1.25, pitch: 1.3 },
   brute: { hp: 13, speed: 1.3, accel: 3.5, radius: 0.46, mass: 2.4, damage: 2, windup: 0.7, reach: 1.35, knock: 0.35, launch: 0.55, pitch: 0.7 },
+  // born without working legs: low, slow-ish, hard to hit, easy to miss in the grass
+  crawler: { hp: 2.2, speed: 2.2, accel: 5, radius: 0.3, mass: 0.8, damage: 1, windup: 0.45, reach: 1.0, knock: 1.2, launch: 1.2, pitch: 1.15 },
 };
 
 const SHIRTS = [PAL.zombieShirt, 0x8fb0c9, 0xd4c49a, 0xb8a0c8];
@@ -51,13 +54,16 @@ function styleFor(type: ZombieType, variant: number): CharacterStyle {
   if (type === 'runner') {
     return { ...base, scale: 0.88, skin: 0xaecfb4, shirt: PAL.zombieHoodie, pants: 0x5f5d6b, shoes: 0xe9e3d8, hat: 'hood', hair: 0x4d5a48 };
   }
+  if (type === 'crawler') {
+    return { ...base, scale: 0.94, skin: 0xb9cc9c, shirt: 0x9aa7b8, pants: 0x6b6660, shoes: 0x5a4a44, hat: 'none', hair: 0x6a735c };
+  }
   if (type === 'brute') {
     return { ...base, scale: 1.34, skin: PAL.zombieSkinDark, shirt: PAL.zombieShirtWhite, pants: PAL.zombieOveralls, shoes: 0x5a4a44, hat: 'straw', hair: 0x5b6b52, overalls: PAL.zombieOveralls, belly: 1.3, bulk: 1.3 };
   }
   return { ...base, scale: 1, skin: PAL.zombieSkin, shirt: SHIRTS[variant % SHIRTS.length], pants: PAL.zombiePants, shoes: 0x5a4a44, hat: 'none', hair: 0x5b6b52 };
 }
 
-type ZState = 'idle' | 'wander' | 'chase' | 'windup' | 'lunge' | 'recover' | 'stagger' | 'down' | 'getup' | 'dead';
+type ZState = 'idle' | 'wander' | 'chase' | 'windup' | 'lunge' | 'recover' | 'stagger' | 'down' | 'getup' | 'dead' | 'vault' | 'bash';
 
 const _dir = { x: 0, z: 0 };
 
@@ -103,6 +109,15 @@ export class Zombie implements NoiseListener, GrassPusher {
   private armBleed: [number, number] = [0, 0];
   /** Seconds spent (as a body) in the pond. */
   private wetT = -1;
+  // fences: climb over (vault) or smash through (bash)
+  private fence: FenceSegment | null = null;
+  private fenceCd = 0;
+  private fenceDir = new THREE.Vector3();
+  private vaultFrom = new THREE.Vector3();
+  private vaultTo = new THREE.Vector3();
+  private vaultT = 0;
+  private vaultDur = 0.7;
+  private vaultMid = false;
   onDeath: ((z: Zombie) => void) | null = null;
   /** Debug: stand still (used to stage screenshots). */
   frozen = false;
@@ -143,6 +158,11 @@ export class Zombie implements NoiseListener, GrassPusher {
       team: 'zombie',
       onRagdollHit: (speed, dir, mass) => this.bumped(speed, dir, mass),
     };
+    if (type === 'crawler') {
+      this.crawl = true;
+      this.body.height = 0.62 * s;
+      this.body.headY = 0.36 * s;
+    }
     ctx.physics.characters.push(this.body);
     ctx.physics.resolveCharacter(this.body, 1.3);
     this.pos.set(this.body.x, 0, this.body.z);
@@ -305,7 +325,7 @@ export class Zombie implements NoiseListener, GrassPusher {
   }
 
   private stagger(v: THREE.Vector3, t: number): void {
-    if (this.state === 'down' || this.state === 'getup') return;
+    if (this.state === 'down' || this.state === 'getup' || this.state === 'vault') return;
     this.knockV.add(new THREE.Vector3(v.x, 0, v.z));
     this.staggerAmt = Math.min(1.5, this.staggerAmt + t * 2);
     if (this.state !== 'stagger') this.state = 'stagger';
@@ -602,6 +622,28 @@ export class Zombie implements NoiseListener, GrassPusher {
       case 'stagger':
         if (this.stateT <= 0) this.state = this.alerted ? 'chase' : 'wander';
         break;
+      case 'bash': {
+        const f = this.fence;
+        if (!f || f.broken) {
+          this.state = 'chase';
+          this.fence = null;
+          break;
+        }
+        if (this.stateT <= 0) {
+          const brute = this.type === 'brute';
+          if (f.bash(this.fenceDir, brute ? 1.3 : 0.55)) {
+            this.state = 'chase';
+            this.fence = null;
+            this.fenceCd = 0.3;
+            sfx.groan(this.pos, this.def.pitch * 1.1, true);
+          } else {
+            this.stateT = brute ? 0.85 : 1.1;
+          }
+          this.squash.kick(2.5);
+          if (brute) this.ctx.shake(0.06);
+        }
+        break;
+      }
       case 'getup':
         if (this.stateT <= 0) {
           this.model.endBlend();
@@ -615,6 +657,11 @@ export class Zombie implements NoiseListener, GrassPusher {
   }
 
   private move(dt: number): void {
+    this.fenceCd = Math.max(0, this.fenceCd - dt);
+    if (this.state === 'vault') {
+      this.updateVault(dt);
+      return;
+    }
     let tx = 0;
     let tz = 0;
     let speed = 0;
@@ -645,7 +692,23 @@ export class Zombie implements NoiseListener, GrassPusher {
       wantX = (tx / tl) * speed;
       wantZ = (tz / tl) * speed;
     }
-    if (this.state === 'lunge' || this.state === 'recover' || this.state === 'windup') {
+    // walking into a fence: climb it or smash it
+    if (this.state === 'chase' && tl > 1e-3 && this.fenceCd <= 0) {
+      const dx = tx / tl;
+      const dz = tz / tl;
+      const pr = this.def.radius + 0.12;
+      const c = this.ctx.physics.climbableAt(this.pos.x + dx * pr, this.pos.z + dz * pr);
+      if (c && c.owner instanceof FenceSegment) {
+        const n = c.owner.normal;
+        const d = (this.pos.x - c.x) * n.x + (this.pos.z - c.z) * n.z;
+        const side = d >= 0 ? 1 : -1;
+        if (-(dx * n.x + dz * n.z) * side > 0.3) {
+          this.startFence(c.owner, n, d);
+          if ((this.state as ZState) === 'vault') return;
+        }
+      }
+    }
+    if (this.state === 'lunge' || this.state === 'recover' || this.state === 'windup' || this.state === 'bash') {
       // keep momentum, bleed it off
       const k = 1 / (1 + dt * (this.state === 'lunge' ? 2 : 7));
       this.vel.x *= k;
@@ -688,6 +751,79 @@ export class Zombie implements NoiseListener, GrassPusher {
     if (this.state !== 'stagger') this.yaw = dampAngle(this.yaw, face, this.type === 'runner' ? 10 : 5, dt);
     this.pos.y = this.ctx.physics.heightAt(this.pos.x, this.pos.z);
     this.pushPos.copy(this.pos);
+  }
+
+  private startFence(seg: FenceSegment, n: THREE.Vector3, d: number): void {
+    const side = d >= 0 ? 1 : -1;
+    this.fence = seg;
+    this.fenceDir.copy(n).multiplyScalar(-side);
+    this.yaw = Math.atan2(this.fenceDir.x, this.fenceDir.z);
+    if (this.type === 'brute' || this.crawl) {
+      // too heavy / no legs: smash through
+      this.state = 'bash';
+      this.stateT = this.type === 'brute' ? 0.55 : 0.8;
+      this.model.express('zombieAttack', 1.4);
+      this.squash.kick(-1.5);
+      return;
+    }
+    this.state = 'vault';
+    this.vaultT = 0;
+    this.vaultDur = this.type === 'runner' ? 0.5 : 0.78;
+    this.vaultMid = false;
+    this.vaultFrom.copy(this.pos);
+    this.vaultTo.copy(this.pos).addScaledVector(this.fenceDir, Math.abs(d) + this.def.radius + 0.35);
+    this.vel.set(0, 0, 0);
+    this.knockV.set(0, 0, 0);
+    this.squash.kick(-2);
+    seg.shake(side * 3);
+  }
+
+  /** Clumsy hop over a fence: a little arc, sometimes the fence gives way under it. */
+  private updateVault(dt: number): void {
+    this.vaultT += dt;
+    const k = Math.min(1, this.vaultT / this.vaultDur);
+    const e = k * k * (3 - 2 * k);
+    this.pos.x = lerp(this.vaultFrom.x, this.vaultTo.x, e);
+    this.pos.z = lerp(this.vaultFrom.z, this.vaultTo.z, e);
+    const ground = this.ctx.physics.heightAt(this.pos.x, this.pos.z);
+    this.pos.y = ground + 4 * 0.95 * this.model.s * k * (1 - k);
+    this.body.x = this.pos.x;
+    this.body.z = this.pos.z;
+    this.pushPos.copy(this.pos);
+    if (!this.vaultMid && k > 0.45) {
+      this.vaultMid = true;
+      const f = this.fence;
+      if (f) {
+        f.shake(4);
+        sfx.woodHit(this.pos.clone().setY(0.9));
+        if (rng.chance(0.2)) {
+          // crash through it
+          f.break(this.fenceDir.clone(), 3.5);
+          this.fence = null;
+          this.pos.y = ground;
+          this.knockDown(this.fenceDir.clone().multiplyScalar(3.2).setY(1.6), 0.6);
+          return;
+        }
+      }
+    }
+    if (k >= 1) {
+      this.pos.y = ground;
+      this.state = 'chase';
+      this.fence = null;
+      this.fenceCd = 0.8;
+      this.squash.kick(3);
+      this.ctx.fx.dust(this.pos.clone().setY(0.05), 3, 0.5);
+      sfx.thud(this.pos, 0.4);
+    }
+  }
+
+  /** Spawned bursting out of somewhere (the barn): shoved forward, already hunting. */
+  burstOut(v: THREE.Vector3): void {
+    this.alert();
+    this.state = 'chase';
+    this.knockV.set(v.x, 0, v.z);
+    this.yaw = Math.atan2(v.x, v.z);
+    this.headSnap.kick(8);
   }
 
   /** Current top speed (legs shot → slower). */
@@ -765,6 +901,20 @@ export class Zombie implements NoiseListener, GrassPusher {
         armLX = armRX = -0.9;
         elL = elR = -0.35;
         lean = 0.25;
+      } else if (this.state === 'bash') {
+        // raise both fists, slam them down on the fence
+        const period = brute ? 0.85 : 1.1;
+        const k = 1 - Math.max(0, this.stateT) / period;
+        const up = k < 0.7 ? k / 0.7 : 1 - (k - 0.7) / 0.3;
+        armLX = armRX = -0.9 - 1.8 * up;
+        elL = elR = -1.1 * up;
+        lean = 0.35 - 0.45 * up;
+        squashY = -0.04 * up;
+      } else if (this.state === 'vault') {
+        armLX = -1.9;
+        armRX = -1.5;
+        elL = elR = -0.2;
+        lean = 0.55;
       }
       if (this.staggerAmt > 0) {
         const k = Math.min(1, this.staggerAmt);
@@ -784,6 +934,13 @@ export class Zombie implements NoiseListener, GrassPusher {
       const knee = (run ? 1.3 : brute ? 0.6 : 0.8) * Math.min(1, sf + 0.1);
       m.shinL.rotation.set(this.limpSide === 0 ? 0.02 : 0.1 + Math.max(0, -c) * knee, 0, 0);
       m.shinR.rotation.set(this.limpSide === 1 ? 0.02 : 0.1 + Math.max(0, c) * knee, 0, 0);
+      if (this.state === 'vault') {
+        // knees tucked over the pickets
+        m.legL.rotation.set(-1.25, 0, 0.12);
+        m.legR.rotation.set(-0.8, 0, -0.12);
+        m.shinL.rotation.set(1.7, 0, 0);
+        m.shinR.rotation.set(1.3, 0, 0);
+      }
       m.armL.rotation.set(armLX, 0, -armZ);
       m.armR.rotation.set(armRX, 0, armZ);
       m.foreL.rotation.set(elL, 0, 0);
@@ -820,8 +977,9 @@ export class Zombie implements NoiseListener, GrassPusher {
     let elL = -0.25 - 0.8 * Math.max(0, Math.sin(ph));
     let elR = -0.25 - 0.8 * Math.max(0, -Math.sin(ph));
     let headX = -1.15 + Math.sin(t * 1.4 + this.variant) * 0.08;
-    if (this.state === 'windup') {
-      const k = 1 - Math.max(0, this.stateT) / this.def.windup;
+    if (this.state === 'windup' || this.state === 'bash') {
+      const period = this.state === 'bash' ? 1.1 : this.def.windup;
+      const k = 1 - Math.max(0, this.stateT) / period;
       theta = 1.32 - 0.5 * k;
       reachL = reachR = reachL * (1 - k) - 2.9 * k;
       elL = elR = elL * (1 - k) - 0.9 * k;

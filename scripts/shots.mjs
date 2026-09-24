@@ -433,6 +433,94 @@ const scenarios = {
     await g(() => __game.advance(3));
     await shot('truck-4');
   },
+  async fences() {
+    // zombies outside the yard: shamblers/runners climb the pickets, the brute smashes through
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(-6.4, 0.6, 0);
+      __game.spawn('shambler', -5.2, 7.6, true);
+      __game.spawn('runner', -6.6, 8.2, true);
+      __game.spawn('brute', -4.6, 6.6, true);
+      __game.spawn('crawler', -7.6, 6.4, true);
+      __game.camera({ yaw: -0.2, zoom: 15 });
+      __game.aim(-6.4, 5);
+      __game.advance(1.3);
+    });
+    await shot('fences-1');
+    console.log(JSON.stringify(await g(() => __game.state().zombies.map((z) => z.state))));
+    await g(() => __game.advance(0.5));
+    await shot('fences-2');
+    console.log(JSON.stringify(await g(() => __game.state().zombies.map((z) => z.state))));
+    await g(() => __game.advance(2.0));
+    await shot('fences-3');
+    console.log(JSON.stringify(await g(() => __game.state())));
+  },
+  async barnhorde() {
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(10.5, 3.5, 3.1);
+      __game.camera({ yaw: -0.25, zoom: 19 });
+      __game.aim(13, -4);
+      __game.advance(0.4);
+      __game.wave(3);
+      __game.advance(1.0);
+    });
+    await shot('barnhorde-1');
+    await g(() => __game.advance(0.75));
+    await shot('barnhorde-2');
+    await g(() => __game.advance(1.4));
+    await shot('barnhorde-3');
+    console.log(JSON.stringify(await g(() => __game.state())));
+  },
+  async daycycle() {
+    for (const [t, name] of [
+      [1, 'sunset'],
+      [2, 'night'],
+      [3, 'dawn'],
+    ]) {
+      await g((tt) => {
+        __game.godMode();
+        __game.clearZombies();
+        __game.teleport(-2.5, -2, 1.2);
+        __game.spawn('shambler', 2.5, -3.2);
+        __game.spawn('runner', 3.6, -0.8);
+        __game.freeze(true);
+        __game.day(tt);
+        __game.camera({ yaw: -0.42, zoom: 18 });
+        __game.aim(3, -2);
+        __game.advance(1.2);
+      }, t);
+      await shot(`day-${name}`);
+    }
+  },
+  async repair() {
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.breakFence(4);
+      const s = __game.game.farm.fenceSegments[4];
+      const n = s.normal;
+      __game.teleport(s.center.x - n.x * 1.1, s.center.z - n.z * 1.1, 0);
+      __game.camera({ yaw: -0.3, zoom: 12 });
+      __game.aim(s.center.x, s.center.z);
+      __game.advance(1.5);
+    });
+    await shot('repair-1');
+    await g(() => {
+      __game.key('KeyC', true);
+      __game.advance(0.6);
+    });
+    await shot('repair-2');
+    await g(() => {
+      __game.advance(0.7);
+      __game.release('KeyC');
+      __game.advance(0.3);
+    });
+    await shot('repair-3');
+    console.log(JSON.stringify(await g(() => __game.game.farm.fenceSegments[4].broken)));
+  },
   async closeup() {
     await g(() => {
       __game.freeze(true);

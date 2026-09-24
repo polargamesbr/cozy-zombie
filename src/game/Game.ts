@@ -5,7 +5,9 @@ import { rng } from '../core/rng';
 import { CameraRig } from '../render/cameraRig';
 import { Lighting } from '../render/lighting';
 import { QUALITY_NAMES, RenderPipeline, type Quality } from '../render/pipeline';
-import { GLOBAL_UNIFORMS } from '../render/materials';
+import { GLOBAL_UNIFORMS, WINDOW_GLOWS } from '../render/materials';
+import { DayCycle } from '../render/daycycle';
+import { TEX } from '../fx/particles';
 import { PhysicsWorld, GRAVITY } from '../physics/world';
 import { Effects } from '../fx/effects';
 import { sfx } from '../audio/sfx';
@@ -86,6 +88,17 @@ export class Game implements GameCtx {
   private showFps = false;
   /** Countdown to the next horde after the farm is cleared. */
   private nextWaveT = -1;
+  /** Time of day (0 afternoon, 1 sunset, 2 night, 3 dawn, 4 = next afternoon); eases toward the target. */
+  dayT = 0;
+  private dayTarget = 0;
+  readonly dayCycle: DayCycle;
+  /** Warm light carried by the player at night (always in the scene: a stable light count). */
+  private lantern = new THREE.PointLight(0xffc27a, 0, 11, 1.4);
+  /** Zombies still to come out this wave (barn hordes trickle out). */
+  private pending: { t: number; type: ZombieType; x: number; z: number; push: THREE.Vector3 | null }[] = [];
+  private barnBurstT = -1;
+  private repairT = 0;
+  private repairSfxT = 0;
   /** Slow-motion close-up on the last kill of a wave. */
   private killCam: { t: number; z: Zombie } | null = null;
 
@@ -110,6 +123,8 @@ export class Game implements GameCtx {
       }
     }
     this.pipeline.setQuality(q);
+    this.dayCycle = new DayCycle(this.lighting, this.pipeline);
+    this.scene.add(this.lantern);
     this.input = new Input(this.pipeline.domElement);
     this.hud = new Hud(document.body);
     this.overlay = new Overlay(document.body);
@@ -144,6 +159,7 @@ export class Game implements GameCtx {
     this.pushers = [];
     this.zombies = [];
     this.pickups = [];
+    WINDOW_GLOWS.length = 0;
     this.farm = new Farm(this);
     this.root.add(this.farm.group);
     this.nav = new NavGrid(this.physics);
@@ -173,7 +189,19 @@ export class Game implements GameCtx {
     this.nav.compute(this.player.pos.x, this.player.pos.z);
     this.lastHp = this.player.hp;
     this.nextWaveT = -1;
+    this.pending = [];
+    this.barnBurstT = -1;
+    this.dayT = 0;
+    this.dayTarget = 0;
+    this.dayCycle.apply(0);
     this.applyQuality(this.pipeline.quality);
+  }
+
+  /** Jump the clock (tests / screenshots). */
+  setDay(t: number): void {
+    this.dayT = t;
+    this.dayTarget = t;
+    this.dayCycle.apply(t);
   }
 
   /** Apply a quality tier to the renderer, the shadows and the grass density. */
@@ -197,6 +225,76 @@ export class Game implements GameCtx {
       // not persisted, that's fine
     }
     this.hud.toast(`Qualidade: ${QUALITY_NAMES[q]}`, 1.6);
+  }
+
+  /** Sun goes down with each horde; at night: lit windows, a lantern, fireflies. */
+  private updateDay(dt: number): void {
+    if (Math.abs(this.dayTarget - this.dayT) > 1e-4) {
+      const step = dt * 0.1;
+      this.dayT = this.dayT < this.dayTarget ? Math.min(this.dayTarget, this.dayT + step) : Math.max(this.dayTarget, this.dayT - step);
+      this.dayCycle.apply(this.dayT);
+    }
+    const night = this.dayCycle.night;
+    const lamp = Math.max(0, (night - 0.25) / 0.75);
+    const p = this.player.pos;
+    this.lantern.position.set(p.x, p.y + 2.3, p.z);
+    this.lantern.intensity = this.player.alive ? lamp * (9 + Math.sin(this.time * 13) * 0.3) : lamp * 3;
+    if (lamp > 0.3 && rng.chance(dt * 9 * lamp)) {
+      const c = this.cam.target;
+      const a = rng.angle();
+      const r = rng.range(2, 14);
+      this.fx.particles.glow.spawn(new THREE.Vector3(c.x + Math.cos(a) * r, rng.range(0.3, 1.6), c.z + Math.sin(a) * r), {
+        vel: new THREE.Vector3(rng.spread(0.4), rng.spread(0.2), rng.spread(0.4)),
+        life: rng.range(2.5, 4.5),
+        size: 0.07,
+        color: 0xd9ff8f,
+        intensity: 2.4,
+        alpha: 1,
+        alphaEnd: 0,
+        fadeIn: 0.4,
+        drag: 0.4,
+        cell: TEX.soft,
+      });
+    }
+  }
+
+  /** Stand next to a broken fence and hold C to nail it back together. */
+  private updateRepair(dt: number): void {
+    let seg: (typeof this.farm.fenceSegments)[number] | null = null;
+    if (this.state === 'playing' && this.player.alive) {
+      let best = 1.9;
+      for (const s of this.farm.fenceSegments) {
+        if (!s.broken) continue;
+        const d = Math.hypot(s.center.x - this.player.pos.x, s.center.z - this.player.pos.z);
+        if (d < best) {
+          best = d;
+          seg = s;
+        }
+      }
+    }
+    if (!seg) {
+      this.repairT = 0;
+      this.hud.setPrompt(null);
+      return;
+    }
+    if (this.input.down('KeyC')) {
+      this.repairT += dt;
+      this.repairSfxT -= dt;
+      if (this.repairSfxT <= 0) {
+        this.repairSfxT = 0.22;
+        sfx.woodHit(seg.center.setY(0.6));
+        this.fx.dust(seg.center.setY(0.3), 1, 0.5, 0xe9dcc6, 0.25);
+      }
+      this.hud.setPrompt(`Consertando… ${Math.min(100, Math.round((this.repairT / 1.1) * 100))}%`);
+      if (this.repairT >= 1.1) {
+        seg.repair();
+        this.repairT = 0;
+        this.feat('CONSERTADO!', seg.center.setY(1.3));
+      }
+    } else {
+      this.repairT = 0;
+      this.hud.setPrompt('Segure C para consertar a cerca');
+    }
   }
 
   /** Frame-rate watchdog: average over ~2 s, ignoring hitches (shader compiles, tab switches). */
@@ -249,12 +347,28 @@ export class Game implements GameCtx {
     return zb;
   }
 
-  private spawnWave(): void {
+  spawnWave(): void {
     this.wave++;
     const n = 4 + this.wave;
     this.killed = 0;
     this.total = 0;
-    for (let i = 0; i < n; i++) {
+    const pick = (i: number): ZombieType =>
+      i === 0 && this.wave % 2 === 1 ? 'brute' : this.wave >= 2 && rng.chance(0.2) ? 'crawler' : rng.chance(0.3) ? 'runner' : 'shambler';
+    // every third horde bursts out of the barn: rattling doors, then they fly off
+    let fromBarn = 0;
+    if (this.wave % 3 === 0) {
+      fromBarn = Math.ceil(n * 0.6);
+      const door = this.farm.barn.doorFront;
+      this.farm.barn.rattle(1.6);
+      this.barnBurstT = 1.6;
+      sfx.groan(door, 0.8);
+      for (let i = 0; i < fromBarn; i++) {
+        const push = new THREE.Vector3(rng.spread(1.6), 0, rng.range(3, 4.5));
+        this.pending.push({ t: 1.7 + i * 0.32, type: pick(i), x: door.x + rng.spread(1.1), z: door.z + 0.1, push });
+      }
+      this.feat('O CELEIRO!', door.clone().setY(3));
+    }
+    for (let i = fromBarn; i < n; i++) {
       // spawn at the edges, away from the player
       let x = 0;
       let z = 0;
@@ -265,8 +379,7 @@ export class Game implements GameCtx {
         z = side === 2 ? b.minZ + 1 : side === 3 ? b.maxZ - 1 : rng.range(b.minZ + 2, b.maxZ - 2);
         if (isOpenGround(x, z, 0.3) && Math.hypot(x - this.player.pos.x, z - this.player.pos.z) > 14) break;
       }
-      const type: ZombieType = i === 0 && this.wave % 2 === 1 ? 'brute' : rng.chance(0.3) ? 'runner' : 'shambler';
-      const zb = this.spawnZombie(type, x, z);
+      const zb = this.spawnZombie(pick(i), x, z);
       zb.alert();
     }
     this.clearedT = -1;
@@ -579,15 +692,40 @@ export class Game implements GameCtx {
     for (; n < pv.length; n++) pv[n].set(0, 0, 0, 0);
 
     // --- objective / flow
-    if (this.state === 'playing' && this.total > 0 && this.killed >= this.total && this.clearedT < 0) {
+    if (this.state === 'playing' && this.total > 0 && this.killed >= this.total && this.clearedT < 0 && this.pending.length === 0) {
       this.clearedT = 0;
       sfx.music?.stinger('clear');
-      this.hud.toast('Fazenda limpa! ✿ Mais zumbis vêm aí…', 3);
-      this.nextWaveT = 10;
+      // the day moves on with every horde
+      this.dayTarget += 0.5;
+      const phase = Number.isInteger(this.dayTarget) ? this.dayTarget % 4 : -1;
+      const mood = ['Um novo dia na fazenda! ☀', 'O sol está se pondo…', 'Anoiteceu. Fique perto da luz…', 'Amanhecendo…'][phase] ?? 'Mais zumbis vêm aí…';
+      const broken = this.farm.fenceSegments.some((s) => s.broken);
+      this.hud.toast(`Fazenda limpa! ✿ ${mood}${broken ? ' · C conserta cercas' : ''}`, 3.5);
+      this.nextWaveT = 12;
       this.hud.setObjective(this.objectiveText(), `${this.killed}/${this.total}`);
       this.spawnPickup('pie', this.player.pos.clone().add(new THREE.Vector3(1.5, 0.3, 1.5)));
       if (this.player.dynamite < this.player.maxDynamite) this.spawnPickup('dynamite', this.player.pos.clone().add(new THREE.Vector3(-1.5, 0.3, 1.2)));
     }
+    // barn hordes and other delayed arrivals
+    if (this.barnBurstT > 0) {
+      this.barnBurstT -= dt;
+      if (this.barnBurstT <= 0) this.farm.barn.burstDoors();
+    }
+    if (this.pending.length) {
+      for (const q of this.pending) q.t -= dt;
+      const ready = this.pending.filter((q) => q.t <= 0);
+      if (ready.length) {
+        this.pending = this.pending.filter((q) => q.t > 0);
+        for (const q of ready) {
+          const zb = this.spawnZombie(q.type, q.x, q.z);
+          if (q.push) zb.burstOut(q.push);
+          else zb.alert();
+        }
+        this.hud.setObjective(this.objectiveText(), `${this.killed}/${this.total}`);
+      }
+    }
+    this.updateDay(dt);
+    this.updateRepair(dt);
     // the next horde comes on its own (N skips the wait)
     if (this.state === 'playing' && this.nextWaveT > 0) {
       this.nextWaveT -= dt;

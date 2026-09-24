@@ -109,6 +109,19 @@ export function installTestApi(game: Game): void {
       game.input.release('KeyG');
       game.tick(1 / 60);
     },
+    /** Time of day: 0 afternoon, 1 sunset, 2 night, 3 dawn. */
+    day(t: number): void {
+      game.setDay(t);
+    },
+    /** Start horde number n right away (3, 6, 9… burst out of the barn). */
+    wave(n: number): void {
+      game.wave = n - 1;
+      game.spawnWave();
+    },
+    breakFence(i: number): void {
+      const s = game.farm.fenceSegments[i];
+      s?.break(s.normal, 3);
+    },
     godMode(): void {
       game.player.invincible = true;
     },

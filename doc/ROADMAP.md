@@ -41,9 +41,8 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
    - [x] Kill-cam em câmera lenta no último zumbi da horda (zoom + barras de cinema)
    - [x] Mortes pelo ambiente: lago (corpos boiam, derrubado se afoga), botijão, caminhonete que pega fogo e explode; rótulos de abate
 5. **Inimigos e estrutura**
-   - [ ] Zumbis que pulam/derrubam cercas, horda saindo do celeiro com a porta explodindo, rastejantes
-   - [ ] Um dia na fazenda: tarde → pôr do sol → noite, hordas entre fases, consertar cercas entre ondas
-     (já feito: hordas começam sozinhas com contagem regressiva após limpar a fazenda)
+   - [x] Zumbis que pulam/derrubam cercas (pulo desajeitado; brutos e rastejantes quebram), horda saindo do celeiro com as portas voando (a cada 3 hordas), rastejantes de nascença
+   - [x] Um dia na fazenda: tarde → pôr do sol → noite → amanhecer (cada horda avança meio período), hordas automáticas entre fases, consertar cercas (segurar C)
 6. **Técnico**
    - [ ] 60 fps estáveis: merge de cercas/props, LOD da grama, opções de qualidade, contador de FPS
      (já feito: 4 níveis de qualidade com ajuste automático, densidade da grama por nível, FPS com `I`)
@@ -52,7 +51,7 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
 ## Backlog anterior
 
 1. **Polimento visual**
-   - [ ] Ciclo de tempo do dia opcional (tarde → pôr do sol → noite com vaga-lumes e luzes acesas)
+   - [x] Ciclo de tempo do dia opcional (tarde → pôr do sol → noite com vaga-lumes e luzes acesas)
    - [x] Rostos mais expressivos (piscar, susto ao tomar dano)
    - [ ] Pegadas/grama amassada temporária por onde passam corpos
    - [ ] Melhorar leitura dos zumbis no meio da grama alta (contorno mais forte à distância)

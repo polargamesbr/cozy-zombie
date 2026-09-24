@@ -36,7 +36,7 @@ src/
     vehicle.ts            caminhonete com suspensão e alarme
     pond.ts               água com shader, vitórias-régias, ondulações
     ambient.ts            pássaros, borboletas, piados
-    navgrid.ts            flow field (Dijkstra) para os zumbis
+    navgrid.ts            flow field (Dijkstra) para os zumbis; cercas são "caras", não bloqueiam
   entities/
     characterModel.ts     rig chibi em SkinnedMesh (ossos rígidos, cotovelo/joelho), rostos, movimento secundário,
                           partes soltas (chapéu, braço), IK do ragdoll + blend para levantar
@@ -87,6 +87,15 @@ src/
   iluminadas como pequenas esferas e somem suavemente ao cruzar o chão. Decals usam material toon
   instanciado (recebem luz e sombra como o chão).
 
+## Ciclo do dia
+
+`render/daycycle.ts` guarda quatro "humores" (tarde, pôr do sol, noite, amanhecer) com cor e
+direção do sol, hemisfério, preenchimento, névoa/fundo (`Lighting.fogColor`), tinta/saturação/
+vinheta do grade, cor e força dos feixes da `AtmospherePass` e o quanto é noite. `apply(t)`
+interpola dois vizinhos (t = 0…4, cíclico). `Game` avança `dayTarget` em 0,5 a cada horda limpa
+e o relógio anda devagar até lá; à noite acende as janelas (`WINDOW_GLOWS`), o lampião do
+jogador (uma `PointLight` que existe sempre, para não recompilar shaders) e solta vaga-lumes.
+
 ## Física
 
 - **Passo fixo de 120 Hz** com acumulador; o tempo de jogo é escalado por hit stop/slow-mo.
@@ -99,6 +108,9 @@ src/
 - **Corpos rígidos** (props): impulsos sequenciais contra chão/estáticos com pontos amostrados
   (cantos de caixa, ponto mais baixo analítico do aro de cilindros → rolamento correto).
 - **Personagens vivos**: círculos no plano XZ empurrados para fora dos estáticos, lago e limites.
+  Colisores `climbable` (cercas) entram no flow field com custo 4× por célula; o zumbi que encosta
+  numa cerca (`PhysicsWorld.climbableAt`) entra em `vault` (arco sobre a cerca, sem colisão) ou
+  `bash` (brutos/rastejantes: `FenceSegment.bash` até quebrar). `FenceSegment.repair()` a refaz.
 - **Água**: `PhysicsWorld.water` (profundidade do lago) faz o chão dos ragdolls afundar no lago;
   partículas submersas recebem arrasto forte e empuxo (`Ragdoll.buoyancy`, que o zumbi zera aos
   poucos para o corpo afundar). Zumbi derrubado que cai na água se afoga.
@@ -145,10 +157,11 @@ basta reduzir `count`). `Game.trackPerf` mede o FPS médio a cada ~2 s (ignorand
   headless (SwiftShader) em `?test` (tempo manual e seed fixa) e salva screenshots em `shots/`.
   Cenários disponíveis em `scripts/shots.mjs` (overview, wide, barn, pond, closeup, combat,
   explosion, chase, title, pick, limbs, crawl, crawlclose, faces, death, dodge, kick, dynamite,
-  killcam, truck…).
+  killcam, truck, fences, barnhorde, daycycle, repair…).
 - `window.__game` (em qualquer modo): `advance(s)`, `teleport(x,z)`, `aim(x,z)`, `fire()`,
   `spawn(tipo,x,z)`, `explode(x,z)`, `camera({yaw,zoom})`, `hit(i,parte,dano)`, `tearArm(i,lado)`,
-  `express(i,rosto,s)`, `kick()`, `holdThrow(x,z)`/`releaseThrow()`, `pick(px,py)`, `state()`…
+  `express(i,rosto,s)`, `kick()`, `holdThrow(x,z)`/`releaseThrow()`, `day(t)`, `wave(n)`,
+  `breakFence(i)`, `pick(px,py)`, `state()`…
 
 ## Como adicionar conteúdo
 
@@ -157,4 +170,5 @@ basta reduzir `count`). `Game.trackPerf` mede o FPS médio a cada ~2 s (ignorand
 - **Novo objeto reativo estático**: crie um `StaticCollider` com um `HitReceiver`
   (`onBulletHit`, `onImpact` → retorne `true` se quebrou, `onBlast`) e registre em `farm.ts`.
 - **Nova cor**: adicione em `palette.ts` e use a chave (nunca hex solto em código novo de cenário).
-- **Novo tipo de zumbi**: adicione em `ZDEFS` e `styleFor()` (`entities/zombie.ts`).
+- **Novo tipo de zumbi**: adicione em `ZDEFS` e `styleFor()` (`entities/zombie.ts`) e na escolha
+  de tipos de `Game.spawnWave()`.

@@ -74,6 +74,17 @@ Uma pequena fazenda de ~62 × 48 m (`src/world/layout.ts`):
   pega fogo e explode, virando sucata fumegante. Cada uma tem um rótulo ("AFOGADO!",
   "BOTIJÃO!", "KABUM!", "CAMINHONETE!", "CHUTE!").
 - **Kill-cam**: o último zumbi da horda cai em câmera lenta, com zoom e barras de cinema.
+- **Cercas não são paredes**: o flow field dá um custo às cercas (≈ desvio de 3 m). Se o desvio
+  for maior, o zumbi pula a cerca (sacode, às vezes ela quebra e ele cai do outro lado);
+  brutos e rastejantes a derrubam na pancada. Entre hordas, segure **C** perto de uma cerca
+  quebrada para consertá-la.
+- **Rastejantes**: zumbis que já nascem sem pernas (a partir da horda 2): baixos, fáceis de
+  perder na grama.
+- **Horda do celeiro**: a cada 3 hordas as portas do celeiro chacoalham, voam longe e boa parte
+  da horda sai de lá em fila.
+- **Um dia na fazenda**: cada horda limpa avança meio período — tarde → pôr do sol (sombras
+  longas, feixes de luz) → noite (luar azul, janelas acesas, lampião do jogador, vaga-lumes) →
+  amanhecer → um novo dia.
 - Pickups: munição em caixas quebradas, torta (+2 corações) ao limpar a fazenda.
 
 ## Feel & Juice
@@ -125,5 +136,6 @@ marcador de acerto e anel de recarga.
 | G (segurar / soltar) | mirar e arremessar dinamite |
 | Esc | pausa |
 | N | chamar a próxima horda agora |
+| C (segurar) | consertar a cerca quebrada ao lado |
 | P | qualidade gráfica (Ultra / Alta / Média / Baixa) |
 | I | mostrar FPS |

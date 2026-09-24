@@ -40,6 +40,7 @@ export class FenceSegment implements HitReceiver, Updatable {
   readonly mesh: THREE.Mesh;
   readonly collider: StaticCollider;
   hp: number;
+  private maxHp: number;
   broken = false;
   private wobble = new Spring(0, 120, 6);
   private pieces: Piece[] = [];
@@ -92,6 +93,52 @@ export class FenceSegment implements HitReceiver, Updatable {
     const mx = (a[0] + b[0]) / 2;
     const mz = (a[1] + b[1]) / 2;
     this.collider = StaticCollider.box(mx, mz, L / 2, kind === 'picket' ? 0.08 : 0.09, kind === 'picket' ? 1.0 : 0.95, this.angle, 'wood', this);
+    this.collider.climbable = true;
+    this.maxHp = this.hp;
+  }
+
+  /** Fence normal (horizontal, unit). */
+  get normal(): THREE.Vector3 {
+    return new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle));
+  }
+
+  get center(): THREE.Vector3 {
+    return new THREE.Vector3(this.collider.x, 0, this.collider.z);
+  }
+
+  /** Something leaning on / climbing over it. */
+  shake(amount: number): void {
+    if (!this.broken) this.wake(amount);
+  }
+
+  /** A zombie hammering at it. Returns true once it gives way. */
+  bash(dir: THREE.Vector3, damage: number): boolean {
+    if (this.broken) return true;
+    this.hp -= damage;
+    const p = new THREE.Vector3(this.collider.x, 0.6, this.collider.z);
+    this.ctx.fx.splinters(p, dir.clone().negate(), 4, this.kind === 'picket' ? PAL.pickets : PAL.fenceWood);
+    sfx.woodHit(p);
+    this.wake(this.sideOf(dir) * 5);
+    if (this.kind === 'picket' && rng.chance(0.4)) this.popPicket(dir);
+    if (this.hp <= 0) {
+      this.break(dir, 4);
+      return true;
+    }
+    return false;
+  }
+
+  /** Put it back together (the player, between waves). */
+  repair(): void {
+    if (!this.broken) return;
+    this.broken = false;
+    this.hp = this.maxHp;
+    this.mesh.visible = true;
+    this.collider.enabled = true;
+    this.wobble.value = 0;
+    this.wake(4);
+    const mid = new THREE.Vector3(this.collider.x, 0.4, this.collider.z);
+    this.ctx.fx.dust(mid, 5, 1, 0xe9dcc6, 0.35);
+    sfx.woodHit(mid);
   }
 
   private wake(amount: number): void {

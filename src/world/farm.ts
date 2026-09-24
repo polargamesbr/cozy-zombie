@@ -10,7 +10,7 @@ import { LAYOUT } from './layout';
 import { createGround } from './ground';
 import { createBush, createFlowers, createForestRing, createGrass, createReeds, createRock, Tree } from './nature';
 import { Barn, House } from './buildings';
-import { FenceRun } from './fences';
+import { FenceRun, type FenceSegment } from './fences';
 import { Pickup } from './vehicle';
 import { Pond } from './pond';
 import { Barrel, Can, Chair, Crate, FlowerPot, HayBale, Prop, PropaneTank, Pumpkin } from './props';
@@ -32,6 +32,7 @@ export class Farm {
   readonly trees: Tree[] = [];
   readonly house: House;
   readonly barn: Barn;
+  readonly fenceSegments: FenceSegment[] = [];
   readonly pond: Pond;
   readonly ambient: Ambient;
   readonly car: Pickup;
@@ -119,6 +120,7 @@ export class Farm {
   private addFence(run: FenceRun): void {
     this.group.add(run.group);
     for (const s of run.segments) {
+      this.fenceSegments.push(s);
       this.ctx.physics.addStatic(s.collider);
       this.updatables.push(s);
       this.blastables.push({ pos: new THREE.Vector3(s.collider.x, 0.5, s.collider.z), receiver: s });

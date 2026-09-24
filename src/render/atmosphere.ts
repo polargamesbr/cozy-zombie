@@ -172,6 +172,15 @@ export class AtmospherePass extends Pass {
     this.compositeQuad = new FullScreenQuad(this.compositeMat);
   }
 
+  /** Color of the sunlit mist (light shafts). */
+  get sunColor(): THREE.Color {
+    return this.compositeMat.uniforms.uSunColor.value as THREE.Color;
+  }
+
+  get fogColor(): THREE.Color {
+    return this.compositeMat.uniforms.uFogColor.value as THREE.Color;
+  }
+
   setAtmosphereSize(width: number, height: number): void {
     this.scatterRT.setSize(width, height);
     this.tmpRT.setSize(width, height);

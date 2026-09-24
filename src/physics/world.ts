@@ -164,6 +164,14 @@ export class PhysicsWorld {
     return hit;
   }
 
+  /** An enabled climbable collider (fence) covering this point, if any. */
+  climbableAt(x: number, z: number, pad = 0.1): StaticCollider | null {
+    for (const c of this.statics) {
+      if (c.enabled && c.climbable && c.containsXZ(x, z, pad)) return c;
+    }
+    return null;
+  }
+
   /** Height of walkable surfaces (porch, steps) under a point; 0 on open ground. */
   heightAt(x: number, z: number): number {
     let h = 0;

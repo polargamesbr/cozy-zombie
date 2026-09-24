@@ -41,6 +41,8 @@ export class StaticCollider {
   walkable = false;
   /** Bullets pass through (e.g. low decorative stuff). */
   ignoreBullets = false;
+  /** Low enough to climb over (fences): the nav grid treats it as costly, not blocked. */
+  climbable = false;
   cos = 1;
   sin = 0;
 

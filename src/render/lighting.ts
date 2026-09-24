@@ -10,11 +10,15 @@ export class Lighting {
   readonly hemi: THREE.HemisphereLight;
   readonly fill: THREE.DirectionalLight;
   readonly sunDir = new THREE.Vector3(-0.5, 0.66, 0.56).normalize();
+  /** Shared by the fog and the background (the day cycle tints it). */
+  readonly fogColor = new THREE.Color(PAL.fog);
   private shadowExtent = 26;
 
   constructor(scene: THREE.Scene) {
-    scene.background = new THREE.Color(PAL.fog);
-    scene.fog = new THREE.Fog(PAL.fog, 42, 110);
+    scene.background = this.fogColor;
+    const fog = new THREE.Fog(PAL.fog, 42, 110);
+    fog.color = this.fogColor;
+    scene.fog = fog;
 
     this.hemi = new THREE.HemisphereLight(PAL.hemiSky, PAL.hemiGround, 1.55);
     scene.add(this.hemi);
@@ -42,7 +46,6 @@ export class Lighting {
     scene.add(this.fill);
   }
 
-  /** Keep the shadow frustum centered on the view, snapped to texels to avoid shimmering. */
   /** Shadow map resolution (quality settings). */
   setShadowSize(size: number): void {
     const s = this.sun.shadow;
@@ -52,6 +55,7 @@ export class Lighting {
     s.map = null;
   }
 
+  /** Keep the shadow frustum centered on the view, snapped to texels to avoid shimmering. */
   update(center: THREE.Vector3): void {
     const texel = (this.shadowExtent * 2) / this.sun.shadow.mapSize.x;
     // snap in light space

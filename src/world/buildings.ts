@@ -3,7 +3,7 @@ import { Rng, rng } from '../core/rng';
 import { compose, damp, Spring } from '../core/math';
 import { PAL } from '../render/palette';
 import { beam, blob, box, cyl, gableGeometry, GeoBuilder, rbox, slabBetween, sphere, worldUV } from '../render/geometry';
-import { GLOBAL_UNIFORMS, toon, toonUnique, vcToon } from '../render/materials';
+import { GLOBAL_UNIFORMS, toon, toonUnique, vcToon, WINDOW_GLOWS } from '../render/materials';
 import { barnBoardTexture, brickTexture, shingleTexture, strawTexture, woodSidingTexture } from '../render/textures';
 import { StaticCollider } from '../physics/colliders';
 import type { GameCtx, Updatable } from '../game/context';
@@ -39,7 +39,9 @@ function curtainMaterial(color: number): THREE.MeshToonMaterial {
 
 function glowMaterial(color: number, k: number): THREE.MeshBasicMaterial {
   const c = new THREE.Color(color).multiplyScalar(k);
-  return new THREE.MeshBasicMaterial({ color: c, toneMapped: true });
+  const mat = new THREE.MeshBasicMaterial({ color: c, toneMapped: true });
+  WINDOW_GLOWS.push({ mat, base: c.clone() });
+  return mat;
 }
 
 /** A framed window with glow, curtains, shutters and an optional flower box (local +Z facing). */
@@ -376,6 +378,9 @@ export class Barn implements Updatable {
   private dr = new Spring(-0.12, 20, 3);
   private vane = new THREE.Group();
   private vaneAngle = 0;
+  /** Doors blown off by a horde (until the farm is rebuilt). */
+  doorsGone = false;
+  private rattleT = 0;
 
   constructor(private ctx: GameCtx) {
     const B = LAYOUT.barn;
@@ -542,11 +547,58 @@ export class Barn implements Updatable {
     this.dr.kick(strength * 3);
   }
 
+  /** World point just outside the big doors. */
+  get doorFront(): THREE.Vector3 {
+    const B = LAYOUT.barn;
+    return new THREE.Vector3(B.x, 0, B.z + B.d / 2 + 0.7);
+  }
+
+  /** Something is banging to get out: the doors rattle for a moment. */
+  rattle(seconds: number): void {
+    this.rattleT = Math.max(this.rattleT, seconds);
+  }
+
+  /** The horde bursts out: both doors fly off in a cloud of dust and splinters. */
+  burstDoors(): void {
+    if (this.doorsGone) return;
+    this.doorsGone = true;
+    const fx = this.ctx.fx;
+    const front = this.doorFront.setY(1.5);
+    for (const [door, sx] of [
+      [this.doorL, -1],
+      [this.doorR, 1],
+    ] as [THREE.Group, number][]) {
+      door.updateWorldMatrix(true, true);
+      const q = door.getWorldQuaternion(new THREE.Quaternion());
+      const c = door.localToWorld(new THREE.Vector3(-sx * 0.85, 0, 0));
+      door.visible = false;
+      fx.debris.spawn('plank', c, new THREE.Vector3(sx * rng.range(2, 3.5), rng.range(3.5, 5), rng.range(6, 8.5)), new THREE.Vector3(1.6, 3.0, 0.1), PAL.barnRedDark, { quat: q, spin: 5, life: 14 });
+      for (let i = 0; i < 3; i++) {
+        fx.debris.spawn('plank', c.clone().add(new THREE.Vector3(rng.spread(0.5), rng.spread(1.2), 0)), new THREE.Vector3(sx * rng.range(1, 4), rng.range(3, 7), rng.range(4, 9)), new THREE.Vector3(rng.range(0.6, 1.5), 0.16, 0.06), PAL.barnTrim, { spin: 14, life: 10 });
+      }
+    }
+    fx.dust(front.clone().setY(0.4), 16, 2.4, 0xe9dcc6, 0.8);
+    fx.smokePuff(front, new THREE.Vector3(0, 0.3, 1), 6, 0.8);
+    fx.splinters(front, new THREE.Vector3(0, 0, 1), 12, PAL.barnRed);
+    sfx.woodBreak(front);
+    sfx.thud(front, 2);
+    this.ctx.shake(0.55);
+    this.ctx.noise(front, 40);
+  }
+
   update(dt: number, t: number): void {
     this.dl.update(dt);
     this.dr.update(dt);
     this.dl.target = 0.55 + Math.sin(t * 0.6) * 0.03;
     this.dr.target = -0.12 + Math.sin(t * 0.5 + 1) * 0.02;
+    if (this.rattleT > 0) {
+      this.rattleT -= dt;
+      if (rng.chance(dt * 9)) {
+        this.dl.kick(rng.range(-3, -1));
+        this.dr.kick(rng.range(1, 3));
+        sfx.woodHit(this.doorFront.setY(1.5));
+      }
+    }
     // doors open outward: left door swings to -z... rotate around hinge
     this.doorL.rotation.y = -this.dl.value;
     this.doorR.rotation.y = -this.dr.value;

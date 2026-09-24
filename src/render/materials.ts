@@ -11,6 +11,9 @@ export const GLOBAL_UNIFORMS = {
   uSunView: { value: new THREE.Vector3(0, 1, 0) },
 };
 
+/** Window interior glows, brightened at night by the day cycle (base = daytime color). */
+export const WINDOW_GLOWS: { mat: THREE.MeshBasicMaterial; base: THREE.Color }[] = [];
+
 let rampTexture: THREE.DataTexture | null = null;
 
 /**

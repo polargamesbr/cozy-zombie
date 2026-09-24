@@ -35,6 +35,7 @@ export class NavGrid {
     this.dirty = true;
   }
 
+  /** 0 = free, 1 = wall, 2 = fence (passable but costly: zombies climb or bash it). */
   private rebuildBlocked(): void {
     const pad = 0.38;
     this.blocked.fill(0);
@@ -56,7 +57,8 @@ export class NavGrid {
         for (let i = i0; i <= i1; i++) {
           const x = this.x0 + (i + 0.5) * this.cell;
           const z = this.z0 + (j + 0.5) * this.cell;
-          if (c.containsXZ(x, z, pad)) this.blocked[j * this.nx + i] = 1;
+          const k = j * this.nx + i;
+          if (c.containsXZ(x, z, pad) && this.blocked[k] !== 1) this.blocked[k] = c.climbable ? 2 : 1;
         }
       }
     }
@@ -134,10 +136,12 @@ export class NavGrid {
           const nj = cj + dj;
           if (ni < 0 || nj < 0 || ni >= nx || nj >= nz) continue;
           const nIdx = nj * nx + ni;
-          if (this.blocked[nIdx]) continue;
+          const bk = this.blocked[nIdx];
+          if (bk === 1) continue;
           // no corner cutting
-          if (di && dj && (this.blocked[cj * nx + ni] || this.blocked[nj * nx + ci])) continue;
-          const nd = cd + (di && dj ? D : 1);
+          if (di && dj && (this.blocked[cj * nx + ni] === 1 || this.blocked[nj * nx + ci] === 1)) continue;
+          // crossing a fence costs about as much as a 3 m detour
+          const nd = cd + (di && dj ? D : 1) * (bk === 2 ? 4 : 1);
           if (nd < dist[nIdx]) {
             dist[nIdx] = nd;
             if (size < this.heap.length) push(nIdx, nd);

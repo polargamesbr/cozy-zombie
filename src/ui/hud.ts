@@ -23,6 +23,7 @@ export class Hud {
   private toastEl: HTMLDivElement;
   private toastT = 0;
   private fpsEl!: HTMLDivElement;
+  private promptEl!: HTMLDivElement;
   private dyn: HTMLDivElement;
   private dynCount: HTMLSpanElement;
   private lastDyn = -1;
@@ -42,6 +43,7 @@ export class Hud {
       <div class="hud-weapon"><div class="weapon-icon"></div><div class="ammo"><span class="mag">0</span><span class="sep">/</span><span class="reserve">0</span></div></div>
       <div class="hud-dyn" title="G: dinamite"><span class="dyn-icon">${dynamiteSvg}</span><span class="dyn-count">×0</span><span class="dyn-key">G</span></div>
       <div class="hud-toast"></div>
+      <div class="hud-prompt"></div>
       <div class="hud-bars"><i></i><i></i></div>
       <div class="crosshair">${crosshairSvg}</div>
     `;
@@ -61,7 +63,15 @@ export class Hud {
     this.toastEl = this.root.querySelector('.hud-toast')!;
     this.dyn = this.root.querySelector('.hud-dyn')!;
     this.fpsEl = this.root.querySelector('.hud-fps')!;
+    this.promptEl = this.root.querySelector('.hud-prompt')!;
     this.dynCount = this.root.querySelector('.dyn-count')!;
+  }
+
+  /** Context action hint at the bottom of the screen (null hides it). */
+  setPrompt(text: string | null): void {
+    const t = text ?? '';
+    if (this.promptEl.textContent !== t) this.promptEl.textContent = t;
+    this.promptEl.classList.toggle('show', !!text);
   }
 
   /** Small FPS / quality readout (null hides it). */
