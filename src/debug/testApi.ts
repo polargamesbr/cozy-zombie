@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Game } from '../game/Game';
-import type { ZombieType } from '../entities/zombie';
+import type { HitPart, ZombieType } from '../entities/zombie';
+import type { FaceKind } from '../render/textures';
 import type { WeaponId } from '../entities/weapons';
 import { sfx } from '../audio/sfx';
 
@@ -75,6 +76,24 @@ export function installTestApi(game: Game): void {
     explode(x: number, z: number, power = 1): void {
       game.explode(new THREE.Vector3(x, 0.4, z), power);
     },
+    /** Shoot a zombie in a given body part (goes through the normal hit path). */
+    hit(i: number, part: HitPart, dmg: number, weapon: 'pistol' | 'shotgun' = 'pistol', dist = 3): void {
+      const z = game.zombies[i];
+      if (!z) return;
+      const from = game.player.pos;
+      const dir = new THREE.Vector3(z.pos.x - from.x, 0, z.pos.z - from.z).normalize();
+      const y = part === 'head' ? 1 : part === 'legL' || part === 'legR' ? 0.2 : part === 'torso' ? 0.5 : 0.6;
+      const point = z.pos.clone().setY(y * z.model.s).addScaledVector(dir, -0.3);
+      z.takeHit(dmg, dir.clone().multiplyScalar(weapon === 'shotgun' ? 12 : 5), point, part === 'head', weapon, dist, { [part]: dmg });
+    },
+    tearArm(i: number, side: 0 | 1): void {
+      const z = game.zombies[i];
+      if (z) z.tearArm(side, new THREE.Vector3(Math.sin(z.yaw + (side ? -1.2 : 1.2)), 0.3, Math.cos(z.yaw + (side ? -1.2 : 1.2))));
+    },
+    express(i: number, kind: FaceKind, seconds = 1): void {
+      const m = i < 0 ? game.player.model : game.zombies[i]?.model;
+      m?.express(kind, seconds);
+    },
     godMode(): void {
       game.player.invincible = true;
     },
@@ -117,7 +136,7 @@ export function installTestApi(game: Game): void {
         time: game.time,
         state: game.state,
         player: { x: game.player.pos.x, z: game.player.pos.z, hp: game.player.hp, weapon: game.player.weapon.id, ammo: game.player.currentAmmo },
-        zombies: game.zombies.map((z) => ({ type: z.type, x: +z.pos.x.toFixed(2), z: +z.pos.z.toFixed(2), state: z.state, hp: +z.hp.toFixed(2) })),
+        zombies: game.zombies.map((z) => ({ type: z.type, x: +z.pos.x.toFixed(2), z: +z.pos.z.toFixed(2), state: z.state, hp: +z.hp.toFixed(2), crawl: z.crawl, limp: z.limpSide, arms: z.model.armLost.map((l) => !l) })),
         bodies: game.physics.bodies.length,
         ragdolls: game.physics.ragdolls.length,
         drawCalls: game.pipeline.renderer.info.render.calls,

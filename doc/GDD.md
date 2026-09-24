@@ -51,13 +51,17 @@ Uma pequena fazenda de ~62 × 48 m (`src/world/layout.ts`):
 ## Gameplay
 
 - Movimento WASD relativo à câmera, rolamento com invencibilidade (Espaço/Shift).
-- Mira no mouse; o tiro sai na altura da arma, mas "gruda" em alvos baixos/altos sob o cursor (latas, abóboras, cabeças).
+- Mira no mouse; o tiro sai na altura da arma, mas "gruda" em alvos baixos/altos sob o cursor (latas, abóboras, cabeças,
+  pernas e zumbis rastejando).
 - **Pistola**: 8 balas, rápida, precisa, knockback moderado.
 - **Espingarda**: 6 cartuchos, recarga cartucho a cartucho (interrompível), 11 bagos em cone,
   queda de dano com a distância. De perto arremessa zumbis longe.
 - Zumbis vagam perto do celeiro, percebem o jogador por proximidade ou **barulho de tiro**
   (raio de 22–32 m) e perseguem usando um *flow field* que contorna casa, cercas e celeiro.
-- Ataque com antecipação (braços sobem), investida e recuperação — dá para esquivar.
+- Ataque com antecipação (braços sobem, cotovelos armados, boca escancarada), investida e recuperação — dá para esquivar.
+- **Dano localizado**: tiro na perna faz o zumbi mancar; mais dano nas pernas (ou espingarda nelas)
+  derruba e ele passa a **rastejar** (lento, baixo, difícil de acertar). Espingarda de perto pode
+  **arrancar um braço** (o coto sangra, o braço quica no chão). Chapéus voam em headshots e mortes.
 - Objetivo: limpar a fazenda (5 zumbis). Depois, `N` chama hordas maiores.
 - Pickups: munição em caixas quebradas, torta (+2 corações) ao limpar a fazenda.
 
@@ -74,7 +78,8 @@ flash branco, sangue estilizado (gotas que viram manchas), névoa vermelha, knoc
 cambaleio; no abate vira **ragdoll** Verlet que dobra o corpo, voa, gira, bate em cercas
 (e as quebra), cai, desliza deixando rastro. Espingarda à queima-roupa pode arrancar a cabeça
 (estilizado, com "fonte" de sangue). Explosões lançam vários corpos e derrubam os sobreviventes,
-que se levantam depois.
+que se levantam depois. Rostos reagem: piscam, fazem careta (> <) ao tomar dano e ficam com X
+nos olhos ao morrer.
 
 Mundo reativo:
 caixas e vasos quebram, cercas quebram em pedaços, cadeiras/latas/barris/abóboras são corpos

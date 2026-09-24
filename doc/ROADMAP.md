@@ -32,9 +32,9 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
    - [x] Partículas "soft" (somem suavemente ao cruzar o chão), fumaça iluminada pelo sol
    - [x] Manchas de sangue iluminadas (recebem sombra) e SMAA para bordas limpas; `?low` desliga AO/névoa/MSAA
 3. **Animação e reações**
-   - [ ] Membros com cotovelo/joelho (IK de 2 ossos) e movimento secundário (chapéu, cabelo, mochila)
-   - [ ] Reações localizadas: tiro na perna → zumbi manca/rasteja; espingarda pode arrancar braço
-   - [ ] Rostos: piscar, susto ao tomar dano, zumbi abrindo a boca antes do ataque
+   - [x] Membros com cotovelo/joelho (IK de 2 ossos no ragdoll) e movimento secundário (chapéu, cabelo, mochila) — personagem virou uma `SkinnedMesh` (6 draw calls em vez de ~30)
+   - [x] Reações localizadas: tiro na perna → zumbi manca/rasteja; espingarda pode arrancar braço (coto sangrando); chapéu voa
+   - [x] Rostos: piscar, susto ao tomar dano, zumbi abrindo a boca antes do ataque
 4. **Verbos de combate**
    - [ ] Chute/empurrão corpo a corpo (joga zumbis em cercas, no lago, em outros zumbis)
    - [ ] Dinamite arremessável com arco previsto
@@ -51,12 +51,12 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
 
 1. **Polimento visual**
    - [ ] Ciclo de tempo do dia opcional (tarde → pôr do sol → noite com vaga-lumes e luzes acesas)
-   - [ ] Rostos mais expressivos (piscar, susto ao tomar dano)
+   - [x] Rostos mais expressivos (piscar, susto ao tomar dano)
    - [ ] Pegadas/grama amassada temporária por onde passam corpos
    - [ ] Melhorar leitura dos zumbis no meio da grama alta (contorno mais forte à distância)
 2. **Feel**
    - [ ] Rumble/vibração em gamepad + suporte a controle
-   - [ ] Mais variações de reação de acerto (braço arrancado com espingarda)
+   - [x] Mais variações de reação de acerto (braço arrancado com espingarda)
    - [ ] Corpos boiando no lago (afundar parcialmente + respingos)
    - [ ] Latas e cartuchos chutáveis pelo jogador
 3. **Mundo interativo**

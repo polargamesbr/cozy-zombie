@@ -647,10 +647,29 @@ export function groundDetailTexture(): THREE.CanvasTexture {
 // Faces (painted onto head spheres; +Z front is at u = 0.25)
 // ---------------------------------------------------------------------------------------------
 
-export type FaceKind = 'player' | 'zombie' | 'zombieDead' | 'playerHurt' | 'playerDead';
+export type FaceKind =
+  | 'player'
+  | 'playerBlink'
+  | 'playerHurt'
+  | 'playerDead'
+  | 'zombie'
+  | 'zombieBlink'
+  | 'zombieAttack'
+  | 'zombieHurt'
+  | 'zombieDead';
 
+/**
+ * Painted face for a head sphere. Expressions share everything but eyes/mouth so swapping the
+ * texture reads as the same character blinking, flinching or opening its mouth. Zombie faces
+ * are painted at half resolution (there are many of them and they are never seen up close).
+ */
 export function faceTexture(kind: FaceKind, skin: number, variant = 0): THREE.CanvasTexture {
-  return canvasTexture(`face-${kind}-${skin}-${variant}`, 1024, 512, (ctx, w, h) => {
+  const player = kind.startsWith('player');
+  const res = player ? 1024 : 512;
+  return canvasTexture(`face-${kind}-${skin}-${variant}`, res, res / 2, (ctx) => {
+    ctx.scale(res / 1024, res / 1024);
+    const w = 1024;
+    const h = 512;
     const r = new Rng(100 + variant * 7);
     ctx.fillStyle = hex(skin);
     ctx.fillRect(0, 0, w, h);
@@ -658,8 +677,10 @@ export function faceTexture(kind: FaceKind, skin: number, variant = 0): THREE.Ca
     const eyeY = h * 0.54;
     const px = (du: number) => fx + du * w; // du in u-units
     const py = (dv: number) => dv * h;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
-    if (kind === 'zombie' || kind === 'zombieDead') {
+    if (!player) {
       // blotches
       for (let i = 0; i < 16; i++) {
         ctx.fillStyle = hex(shade(skin, 0.86), 0.35);
@@ -684,55 +705,63 @@ export function faceTexture(kind: FaceKind, skin: number, variant = 0): THREE.Ca
       }
     }
 
-    if (kind === 'player' || kind === 'playerHurt') {
+    // ---------------------------------------------------------------- player
+    if (player && kind !== 'playerDead') {
       // blush
       for (const s of [-1, 1]) {
-        ctx.fillStyle = 'rgba(240,120,120,0.35)';
+        ctx.fillStyle = kind === 'playerHurt' ? 'rgba(240,110,110,0.5)' : 'rgba(240,120,120,0.35)';
         ctx.beginPath();
         ctx.ellipse(px(s * 0.078), py(0.6), 22, 12, 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      if (kind === 'player') {
-        for (const s of [-1, 1]) {
+    }
+    if (kind === 'player' || kind === 'playerBlink') {
+      for (const s of [-1, 1]) {
+        const x = px(s * 0.043);
+        if (kind === 'player') {
           ctx.fillStyle = '#2b2226';
           ctx.beginPath();
-          ctx.ellipse(px(s * 0.043), eyeY, 11, 17, 0, 0, Math.PI * 2);
+          ctx.ellipse(x, eyeY, 11, 17, 0, 0, Math.PI * 2);
           ctx.fill();
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
-          ctx.arc(px(s * 0.043) + 3, eyeY - 6, 4.5, 0, Math.PI * 2);
+          ctx.arc(x + 3, eyeY - 6, 4.5, 0, Math.PI * 2);
           ctx.fill();
-        }
-        ctx.strokeStyle = '#6b3b34';
-        ctx.lineWidth = 4;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.arc(fx, py(0.61), 10, 0.15 * Math.PI, 0.85 * Math.PI);
-        ctx.stroke();
-      } else {
-        // squeezed eyes > <
-        ctx.strokeStyle = '#2b2226';
-        ctx.lineWidth = 5;
-        ctx.lineCap = 'round';
-        for (const s of [-1, 1]) {
-          const x = px(s * 0.043);
+        } else {
+          // closed: a soft lash curve
+          ctx.strokeStyle = '#2b2226';
+          ctx.lineWidth = 5;
           ctx.beginPath();
-          ctx.moveTo(x - 10 * s, eyeY - 10);
-          ctx.lineTo(x + 6 * s, eyeY);
-          ctx.lineTo(x - 10 * s, eyeY + 10);
+          ctx.arc(x, eyeY - 4, 12, 0.18 * Math.PI, 0.82 * Math.PI);
           ctx.stroke();
         }
-        ctx.fillStyle = '#6b3b34';
-        ctx.beginPath();
-        ctx.ellipse(fx, py(0.63), 8, 10, 0, 0, Math.PI * 2);
-        ctx.fill();
       }
+      ctx.strokeStyle = '#6b3b34';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(fx, py(0.61), 10, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
     }
-
+    if (kind === 'playerHurt') {
+      // squeezed eyes > <
+      ctx.strokeStyle = '#2b2226';
+      ctx.lineWidth = 5;
+      for (const s of [-1, 1]) {
+        const x = px(s * 0.043);
+        ctx.beginPath();
+        ctx.moveTo(x - 10 * s, eyeY - 10);
+        ctx.lineTo(x + 6 * s, eyeY);
+        ctx.lineTo(x - 10 * s, eyeY + 10);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#6b3b34';
+      ctx.beginPath();
+      ctx.ellipse(fx, py(0.63), 8, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     if (kind === 'playerDead') {
       ctx.strokeStyle = '#2b2226';
       ctx.lineWidth = 5;
-      ctx.lineCap = 'round';
       for (const s of [-1, 1]) {
         const x = px(s * 0.043);
         ctx.beginPath();
@@ -744,37 +773,79 @@ export function faceTexture(kind: FaceKind, skin: number, variant = 0): THREE.Ca
       }
     }
 
-    if (kind === 'zombie') {
-      const big = variant % 2 === 0 ? 1 : -1;
+    // ---------------------------------------------------------------- zombie
+    if (player) return;
+    const big = variant % 2 === 0 ? 1 : -1;
+    const lidColor = hex(shade(skin, 0.8));
+    const rim = hex(shade(skin, 0.5), 0.8);
+    const brow = hex(shade(skin, 0.45));
+    if (kind === 'zombie' || kind === 'zombieAttack') {
+      const attack = kind === 'zombieAttack';
       for (const s of [-1, 1]) {
-        const rad = s === big ? 17 : 12;
+        const rad = (s === big ? 17 : 12) * (attack ? 1.25 : 1);
         const x = px(s * 0.046);
         ctx.fillStyle = hex(0xfff6c9);
         ctx.beginPath();
         ctx.arc(x, eyeY, rad, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = hex(shade(skin, 0.5), 0.8);
+        ctx.strokeStyle = rim;
         ctx.lineWidth = 2.5;
         ctx.stroke();
-        ctx.fillStyle = '#5a1f2a';
+        ctx.fillStyle = attack ? '#8a1f2c' : '#5a1f2a';
         ctx.beginPath();
-        ctx.arc(x + s * 2 + (variant % 3) - 1, eyeY + 2, rad * 0.32, 0, Math.PI * 2);
+        ctx.arc(x + s * 2 + (variant % 3) - 1, eyeY + 2, rad * (attack ? 0.22 : 0.32), 0, Math.PI * 2);
         ctx.fill();
       }
-      // droopy brow on the small eye
-      ctx.strokeStyle = hex(shade(skin, 0.45));
+      ctx.strokeStyle = brow;
       ctx.lineWidth = 5;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(px(-big * 0.046) - 14, eyeY - 18);
-      ctx.lineTo(px(-big * 0.046) + 14, eyeY - 13);
-      ctx.stroke();
-    }
-
-    if (kind === 'zombieDead') {
+      if (attack) {
+        // angry brows slanting to the nose
+        for (const s of [-1, 1]) {
+          const x = px(s * 0.046);
+          ctx.beginPath();
+          ctx.moveTo(x + s * 20, eyeY - 30);
+          ctx.lineTo(x - s * 14, eyeY - 19);
+          ctx.stroke();
+        }
+      } else {
+        // droopy brow on the small eye
+        ctx.beginPath();
+        ctx.moveTo(px(-big * 0.046) - 14, eyeY - 18);
+        ctx.lineTo(px(-big * 0.046) + 14, eyeY - 13);
+        ctx.stroke();
+      }
+    } else if (kind === 'zombieBlink') {
+      for (const s of [-1, 1]) {
+        const rad = s === big ? 17 : 12;
+        const x = px(s * 0.046);
+        ctx.fillStyle = lidColor;
+        ctx.beginPath();
+        ctx.arc(x, eyeY, rad, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = rim;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.strokeStyle = brow;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(x - rad * 0.95, eyeY + 1);
+        ctx.quadraticCurveTo(x, eyeY + rad * 0.5, x + rad * 0.95, eyeY + 1);
+        ctx.stroke();
+      }
+    } else if (kind === 'zombieHurt') {
       ctx.strokeStyle = '#3a2228';
       ctx.lineWidth = 6;
-      ctx.lineCap = 'round';
+      for (const s of [-1, 1]) {
+        const x = px(s * 0.046);
+        ctx.beginPath();
+        ctx.moveTo(x - 12 * s, eyeY - 12);
+        ctx.lineTo(x + 7 * s, eyeY);
+        ctx.lineTo(x - 12 * s, eyeY + 12);
+        ctx.stroke();
+      }
+    } else if (kind === 'zombieDead') {
+      ctx.strokeStyle = '#3a2228';
+      ctx.lineWidth = 6;
       for (const s of [-1, 1]) {
         const x = px(s * 0.046);
         ctx.beginPath();
@@ -786,17 +857,51 @@ export function faceTexture(kind: FaceKind, skin: number, variant = 0): THREE.Ca
       }
     }
 
-    if (kind === 'zombie' || kind === 'zombieDead') {
-      // open mouth with two teeth
-      const my = py(0.66);
-      ctx.fillStyle = '#4a1d27';
+    // mouths
+    const my = py(0.66);
+    if (kind === 'zombieAttack') {
+      // gaping mouth: two rows of teeth and a tongue
+      ctx.fillStyle = '#3e1520';
       ctx.beginPath();
-      ctx.ellipse(fx + 4, my, 20, kind === 'zombieDead' ? 9 : 14, 0.08, 0, Math.PI * 2);
+      ctx.ellipse(fx + 4, my + 8, 30, 27, 0.05, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#c95a6a';
+      ctx.beginPath();
+      ctx.ellipse(fx + 8, my + 24, 16, 9, 0.1, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#fbf4dc';
-      ctx.fillRect(fx - 8, my - (kind === 'zombieDead' ? 8 : 13), 7, 8);
-      ctx.fillRect(fx + 6, my - (kind === 'zombieDead' ? 8 : 13), 6, 6);
-      if (kind === 'zombieDead') {
+      ctx.fillRect(fx - 14, my - 18, 8, 10);
+      ctx.fillRect(fx + 2, my - 19, 7, 9);
+      ctx.fillRect(fx + 16, my - 16, 6, 7);
+      ctx.fillRect(fx - 6, my + 27, 7, 7);
+      ctx.fillRect(fx + 12, my + 26, 6, 7);
+    } else if (kind === 'zombieHurt') {
+      // clenched grimace
+      ctx.fillStyle = '#4a1d27';
+      ctx.beginPath();
+      ctx.ellipse(fx + 4, my + 2, 22, 9, 0.05, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fbf4dc';
+      ctx.fillRect(fx - 12, my - 4, 30, 6);
+      ctx.strokeStyle = '#4a1d27';
+      ctx.lineWidth = 2;
+      for (let k = -1; k <= 2; k++) {
+        ctx.beginPath();
+        ctx.moveTo(fx + k * 7, my - 4);
+        ctx.lineTo(fx + k * 7, my + 2);
+        ctx.stroke();
+      }
+    } else {
+      // open mouth with two teeth
+      const dead = kind === 'zombieDead';
+      ctx.fillStyle = '#4a1d27';
+      ctx.beginPath();
+      ctx.ellipse(fx + 4, my, 20, dead ? 9 : 14, 0.08, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fbf4dc';
+      ctx.fillRect(fx - 8, my - (dead ? 8 : 13), 7, 8);
+      ctx.fillRect(fx + 6, my - (dead ? 8 : 13), 6, 6);
+      if (dead) {
         ctx.fillStyle = '#e07a86';
         ctx.beginPath();
         ctx.ellipse(fx + 10, my + 10, 8, 11, 0.2, 0, Math.PI * 2);

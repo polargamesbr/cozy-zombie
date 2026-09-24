@@ -38,9 +38,11 @@ src/
     ambient.ts            pássaros, borboletas, piados
     navgrid.ts            flow field (Dijkstra) para os zumbis
   entities/
-    characterModel.ts     rig chibi procedural (partes pivotadas nas juntas) + ragdoll + blend para levantar
+    characterModel.ts     rig chibi em SkinnedMesh (ossos rígidos, cotovelo/joelho), rostos, movimento secundário,
+                          partes soltas (chapéu, braço), IK do ragdoll + blend para levantar
     player.ts             movimento, esquiva, armas, recarga, animação procedural, dano
-    zombie.ts             IA (vagar/perseguir/antecipar/investir/cambalear/derrubado/levantar), morte
+    zombie.ts             IA (vagar/perseguir/antecipar/investir/cambalear/derrubado/levantar), mancar/rastejar,
+                          braço arrancado, morte
     combat.ts             hitscan: pellets, acúmulo por zumbi, reações por superfície, juice global
     weapons.ts            definições das armas + malhas das armas
     pickup.ts             munição e torta
@@ -63,8 +65,18 @@ src/
   cenário estático é **mesclada** com `GeoBuilder` (uma malha por material, cor por vértice).
 - Vento: `addWind()` injeta balanço no vertex shader (árvores, arbustos, flores). A grama tem um
   shader próprio que também recebe até 10 "empurradores" (jogador/zumbis) e a rajada de explosões.
-- Personagens: 3 draw calls por junta (malha, contorno por casco invertido, silhueta X-ray). A
-  silhueta usa stencil: o corpo visível escreve 1; o X-ray desenha só onde está oculto (`GreaterDepth`) e o stencil ≠ 1.
+- Personagens: cada um é **uma `SkinnedMesh`** com pesos rígidos (cada vértice preso a um osso:
+  tronco, cabeça, chapéu, cabelo, mochila, braço/antebraço, coxa/canela, cotos) + a cabeça
+  (malha própria com o rosto pintado). São 6 draw calls por personagem: corpo, contorno (casco
+  invertido, só no grupo "contornado" da geometria), silhueta X-ray, e o mesmo para a cabeça. A
+  silhueta usa stencil: o corpo visível escreve 1; o X-ray desenha só onde está oculto
+  (`GreaterDepth`) e o stencil ≠ 1. Ossos com escala ~0 escondem partes (cotos até o braço sair).
+- Rostos: texturas de canvas por expressão (`faceTexture`): neutro, piscando, susto/dor, ataque
+  (boca escancarada) e morto; `CharacterModel.express()` troca por um tempo, piscar é automático.
+- Movimento secundário: molas amortecidas (`Wobble`) movidas pela aceleração do osso-âncora no
+  referencial local (chapéu, cabelo, mochila; recuo e tiros dão um `jiggle`). Partes soltas (chapéu
+  que voa, braço arrancado) são ossos reanexados ao mundo com uma simulação simples (quica, gira,
+  assenta deitado, encolhe após 20 s).
 - Pós: `RenderPass` (MSAA 4x, HalfFloat, stencil) → `GTAOPass` em meia resolução (objetos com
   `userData.noAO` ficam de fora) → `AtmospherePass` (névoa baixa ray-marched contra o shadow map do
   sol, reaproveitando a profundidade do AO; névoa de altura) → bloom com threshold alto (só HDR:
@@ -78,7 +90,8 @@ src/
 
 - **Passo fixo de 120 Hz** com acumulador; o tempo de jogo é escalado por hit stop/slow-mo.
 - **Ragdoll Verlet**: cabeça, ombros, quadris, mãos e pés; torso rígido (6 vínculos), cabeça
-  presa nos ombros, membros de um segmento, limites suaves. Atrito de derrapagem proporcional à
+  presa nos ombros, membros que podem dobrar (mão/pé entre 50–62% e 100% do comprimento; cotovelo e
+  joelho são resolvidos com IK de 2 ossos ao posar), limites suaves. Atrito de derrapagem proporcional à
   massa apoiada, amortecimento de rolamento, restituição baixa ("thud"), impactos reportados para
   efeitos. Colide com chão, colisores estáticos (quebrando os quebráveis), props, personagens
   vivos (efeito boliche) e outros ragdolls. Dorme quando para.
@@ -86,7 +99,9 @@ src/
   (cantos de caixa, ponto mais baixo analítico do aro de cilindros → rolamento correto).
 - **Personagens vivos**: círculos no plano XZ empurrados para fora dos estáticos, lago e limites.
 - Balas: `PhysicsWorld.raycast` testa chão, estáticos, props, partículas de ragdolls e cápsulas
-  de personagens (com esfera de cabeça para headshot).
+  de personagens (com esfera de cabeça para headshot). `Zombie.classify()` diz a parte atingida
+  (cabeça, tronco, perna E/D, braço E/D); `Combat` soma o dano por parte: pernas fazem mancar e
+  depois rastejar (hitbox baixa), espingarda de perto arranca braços.
 
 ## Áudio
 
@@ -113,9 +128,10 @@ impulsos, reação de cenário, rajada na grama e barulho.
 - `npm run build && npm run shots -- overview combat explosion` — abre o jogo no Chromium
   headless (SwiftShader) em `?test` (tempo manual e seed fixa) e salva screenshots em `shots/`.
   Cenários disponíveis em `scripts/shots.mjs` (overview, wide, barn, pond, closeup, combat,
-  explosion, chase, title, pick).
+  explosion, chase, title, pick, limbs, crawl, crawlclose, faces, death, dodge…).
 - `window.__game` (em qualquer modo): `advance(s)`, `teleport(x,z)`, `aim(x,z)`, `fire()`,
-  `spawn(tipo,x,z)`, `explode(x,z)`, `camera({yaw,zoom})`, `pick(px,py)`, `state()`…
+  `spawn(tipo,x,z)`, `explode(x,z)`, `camera({yaw,zoom})`, `hit(i,parte,dano)`, `tearArm(i,lado)`,
+  `express(i,rosto,s)`, `pick(px,py)`, `state()`…
 
 ## Como adicionar conteúdo
 

@@ -62,7 +62,6 @@ export class Player implements GrassPusher {
   private dodgeCd = 0;
   private dodgeDir = new THREE.Vector3();
   invulnT = 0;
-  private hurtFaceT = 0;
   ragdoll: Ragdoll | null = null;
   /** For the HUD: time since last successful hit (hit marker). */
   lastHitT = 10;
@@ -100,6 +99,7 @@ export class Player implements GrassPusher {
     }
     ctx.root.add(this.model.root);
     ctx.root.add(this.model.shadow);
+    this.model.ground = (gx, gz) => ctx.groundAt(gx, gz);
     this.pos.set(x, 0, z);
     this.body = {
       x,
@@ -156,9 +156,9 @@ export class Player implements GrassPusher {
     this.model.flash(0.12);
     this.headNod.kick(12);
     this.squash.kick(4);
+    this.model.jiggle(4);
     if (amount > 0) {
-      this.hurtFaceT = 0.5;
-      this.model.setFace('playerHurt');
+      this.model.express('playerHurt', 0.5);
       sfx.hurt(this.pos);
       this.ctx.shake(0.45);
       this.ctx.hitstop(0.06);
@@ -177,6 +177,7 @@ export class Player implements GrassPusher {
     const rd = this.model.createRagdoll(vel);
     this.ragdoll = rd;
     this.ctx.physics.addRagdoll(rd);
+    this.model.popHat(new THREE.Vector3(impulse.x * 0.8, 4.5, impulse.z * 0.8));
     this.guns.pistol.visible = false;
     this.guns.shotgun.visible = false;
     this.ctx.slowmo(0.35, 1.2);
@@ -197,16 +198,12 @@ export class Player implements GrassPusher {
         this.model.applyRagdoll(this.ragdoll);
         this.ragdoll.center(this.pos);
       }
-      this.model.updateFlash(dt);
+      this.model.update(dt);
       return;
     }
     this.invulnT = Math.max(0, this.invulnT - dt);
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.dodgeCd = Math.max(0, this.dodgeCd - dt);
-    if (this.hurtFaceT > 0) {
-      this.hurtFaceT -= dt;
-      if (this.hurtFaceT <= 0) this.model.setFace('player');
-    }
 
     // ---------------- movement
     const maxSpeed = 4.7;
@@ -318,6 +315,7 @@ export class Player implements GrassPusher {
 
     this.animate(dt);
     this.syncModel();
+    this.model.update(dt);
   }
 
   private startReload(): void {
@@ -397,6 +395,7 @@ export class Player implements GrassPusher {
     this.armKick.kick(w.id === 'shotgun' ? 9 : 4.5);
     this.squash.kick(w.id === 'shotgun' ? 2.6 : 0.9);
     this.headNod.kick(w.id === 'shotgun' ? 3 : 1);
+    this.model.jiggle(w.id === 'shotgun' ? 2.2 : 0.8);
     this.spreadKick = Math.min(1, this.spreadKick + (w.id === 'shotgun' ? 1 : 0.35));
     this.ctx.shake(w.shake);
     this.ctx.cam.kick(flat.clone().negate(), w.camKick);
@@ -437,7 +436,6 @@ export class Player implements GrassPusher {
     this.armKick.update(dt);
     this.squash.update(dt);
     this.headNod.update(dt);
-    m.updateFlash(dt);
     const speed = Math.hypot(this.vel.x, this.vel.z);
     const sf = clamp(speed / 4.7, 0, 1.4);
     // movement relative to facing
@@ -451,11 +449,16 @@ export class Player implements GrassPusher {
       if (sf > 0.8 && rng.chance(0.5)) this.ctx.fx.dust(this.pos.clone().setY(0.05), 1, 0.3, PAL.dust, 0.22);
     }
     const sw = Math.sin(this.walkPhase);
+    const cw = Math.cos(this.walkPhase);
     const amp = Math.min(1, sf);
     const legSwing = 0.85 * amp;
     const dirSign = fwd >= -0.2 ? 1 : -1;
-    m.legL.rotation.set(sw * legSwing * dirSign * Math.min(1, Math.abs(fwd) + 0.3), 0, sw * side * 0.4);
-    m.legR.rotation.set(-sw * legSwing * dirSign * Math.min(1, Math.abs(fwd) + 0.3), 0, -sw * side * 0.4);
+    const stride = legSwing * dirSign * Math.min(1, Math.abs(fwd) + 0.3);
+    m.legL.rotation.set(sw * stride, 0, sw * side * 0.4);
+    m.legR.rotation.set(-sw * stride, 0, -sw * side * 0.4);
+    // knees fold while the foot swings forward, and stay a little soft when standing
+    m.shinL.rotation.set(0.08 + Math.max(0, -cw * dirSign) * 1.1 * amp, 0, 0);
+    m.shinR.rotation.set(0.08 + Math.max(0, cw * dirSign) * 1.1 * amp, 0, 0);
     const bob = Math.abs(Math.cos(this.walkPhase)) * 0.055 * amp;
     const t = this.ctx.time;
     const breathe = Math.sin(t * 2.4) * 0.012;
@@ -468,18 +471,23 @@ export class Player implements GrassPusher {
     let roll = -side * 0.1;
     m.body.position.z = 0;
     if (this.dodgeT > 0) {
-      // forward roll pivoting around the belly
+      // forward roll pivoting around the belly, tucked into a ball
       const k = 1 - this.dodgeT / 0.38;
       const a = k * Math.PI * 2;
       const h = 0.5;
       m.body.rotation.set(a, 0, 0);
       m.body.position.y = h - h * Math.cos(a) + Math.sin(k * Math.PI) * 0.12;
       m.body.position.z = -h * Math.sin(a);
+      const tuck = Math.sin(k * Math.PI);
+      m.legL.rotation.set(-1.3 * tuck, 0, 0.1);
+      m.legR.rotation.set(-1.3 * tuck, 0, -0.1);
+      m.shinL.rotation.set(0.1 + 2 * tuck, 0, 0);
+      m.shinR.rotation.set(0.1 + 2 * tuck, 0, 0);
       lean = 0;
       roll = 0;
     } else m.body.rotation.set(lean, 0, roll);
 
-    // arms / weapon pose
+    // arms / weapon pose (the gun cancels the arm + elbow pitch so it stays level)
     const up = -this.armKick.value * 0.045;
     const swapDown = this.swapT > 0 ? Math.sin((this.swapT / 0.28) * Math.PI) * 0.9 : 0;
     const reloadDip = this.reloading ? 0.35 + Math.sin(t * 14) * 0.08 : 0;
@@ -488,19 +496,27 @@ export class Player implements GrassPusher {
     if (this.dodgeT > 0) {
       m.armR.rotation.set(-2.4, 0, 0.3);
       m.armL.rotation.set(-2.4, 0, -0.3);
-      gun.rotation.set(2.4, 0, 0);
+      m.foreR.rotation.set(-1.3, 0, 0);
+      m.foreL.rotation.set(-1.3, 0, 0);
+      gun.rotation.set(3.7, 0, 0);
     } else if (this.weapon.id === 'pistol') {
       const ar = -1.46 + up + swapDown + reloadDip + armBob;
+      const er = -0.08 + up * 0.6 - swapDown * 0.4;
       m.armR.rotation.set(ar, 0, 0.14);
+      m.foreR.rotation.set(er, 0, 0);
       m.armL.rotation.set(-1.32 + up * 0.8 + swapDown + reloadDip * 1.4 + armBob, 0, -0.5);
-      gun.rotation.set(-ar - 0.02, -0.12, 0);
+      m.foreL.rotation.set(-0.35 - reloadDip * 1.4 - swapDown * 0.5, 0, 0);
+      gun.rotation.set(-(ar + er) - 0.02, -0.12, 0);
       gun.position.set(0, 0, 0.02 - this.gunKick.value * 0.012);
     } else {
       const ar = -0.92 + up + swapDown + reloadDip * 0.5 + armBob;
+      const er = -0.42 + up * 0.5 - swapDown * 0.5;
       m.armR.rotation.set(ar, 0, 0.16);
+      m.foreR.rotation.set(er, 0, 0);
       const pumpPull = this.pumpT >= 0 ? Math.sin(Math.min(1, this.pumpT / 0.22) * Math.PI) * 0.25 : 0;
       m.armL.rotation.set(-1.42 + up * 0.8 + swapDown + reloadDip + pumpPull + armBob, 0, -0.62);
-      gun.rotation.set(-ar - 0.04 + up * 0.3, -0.16, 0);
+      m.foreL.rotation.set(-0.3 - pumpPull * 1.2 - reloadDip * 0.8, 0, 0);
+      gun.rotation.set(-(ar + er) - 0.04 + up * 0.3, -0.16, 0);
       gun.position.set(0.02, 0.0, 0.02 - this.gunKick.value * 0.018);
     }
     m.head.rotation.set(-this.headNod.value * 0.04 + Math.sin(t * 1.3) * 0.03, 0, Math.sin(t * 0.9) * 0.03);

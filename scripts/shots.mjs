@@ -141,8 +141,9 @@ const scenarios = {
     console.log(JSON.stringify(await g(() => __game.state())));
   },
   async title() {
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
-    await page.waitForTimeout(6000);
+    // real-time loop: the first frames compile every shader (slow on SwiftShader)
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    await page.waitForFunction(() => window.__game && window.__game.game.time > 2, null, { timeout: 180000, polling: 1000 });
     await shot('title');
   },
   async chase() {
@@ -232,6 +233,103 @@ const scenarios = {
     });
     await shot('pond');
   },
+  async limbs() {
+    // localized reactions: a limp, a crawler (legs shot out) and a brute losing an arm
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(-2, -3, 1.57);
+      __game.spawn('shambler', 3, -1.4, true);
+      __game.spawn('shambler', 3.4, -4.4, true);
+      __game.spawn('brute', 5.4, -2.8, true);
+      __game.camera({ yaw: -0.3, zoom: 13 });
+      __game.aim(4, -3);
+      __game.advance(0.3);
+      __game.hit(0, 'legL', 1.1);
+      __game.hit(1, 'legR', 2.2);
+      __game.tearArm(2, 1);
+      __game.advance(0.06);
+    });
+    await shot('limbs-1');
+    await g(() => __game.advance(1.6));
+    await shot('limbs-2');
+    console.log(JSON.stringify(await g(() => __game.state())));
+    await g(() => __game.advance(1.3));
+    await shot('limbs-3');
+    console.log(JSON.stringify(await g(() => __game.state())));
+  },
+  async faces() {
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(-9.6, 1.6, 0.4);
+      __game.spawn('shambler', -11.2, 0.2);
+      __game.spawn('runner', -9.6, -0.4);
+      __game.spawn('brute', -7.8, 0.0);
+      __game.freeze(true);
+      __game.camera({ yaw: -0.2, zoom: 7 });
+      __game.aim(-8.6, 6);
+      __game.advance(0.6);
+      for (const z of __game.game.zombies) z.yaw = -0.2;
+      __game.express(0, 'zombieAttack', 3);
+      __game.express(1, 'zombieHurt', 3);
+      __game.express(2, 'zombieBlink', 3);
+      __game.express(-1, 'playerBlink', 3);
+      __game.advance(0.1);
+    });
+    await shot('faces');
+  },
+  async crawl() {
+    // side view of a crawler and a limper coming at the player
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(-3, -3, 1.57);
+      __game.spawn('shambler', 2.2, -3.4, true);
+      __game.spawn('runner', 3.2, -1.6, true);
+      __game.camera({ yaw: -0.3, zoom: 10 });
+      __game.aim(2, -3);
+      __game.advance(0.2);
+      __game.hit(0, 'legL', 2.2);
+      __game.hit(1, 'legR', 0.8);
+      __game.advance(2.4);
+    });
+    await shot('crawl-1');
+    await g(() => __game.advance(0.25));
+    await shot('crawl-2');
+    console.log(JSON.stringify(await g(() => __game.state())));
+    await g(() => __game.advance(1.2));
+    await shot('crawl-3');
+    console.log(JSON.stringify(await g(() => __game.state())));
+  },
+  async crawlclose() {
+    // frozen crawler seen from the side, close and low
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(-4, -3, 1.57);
+      __game.spawn('shambler', 1, -3.2, true);
+      __game.camera({ yaw: -0.3, zoom: 10 });
+      __game.aim(2, -3);
+      __game.advance(0.2);
+      __game.hit(0, 'legL', 2.2);
+      __game.advance(3.2);
+      __game.freeze(true);
+      const z = __game.game.zombies[0];
+      __game.teleport(z.pos.x - 0.6, z.pos.z + 2.2, 3.14);
+      __game.camera({ yaw: 0.25, zoom: 5 });
+      __game.aim(z.pos.x - 0.6, z.pos.z - 3);
+      __game.advance(0.4);
+    });
+    await shot('crawlclose-1');
+    await g(() => {
+      __game.express(0, 'zombieAttack', 2);
+      __game.game.zombies[0].frozen = false;
+      __game.advance(0.25);
+    });
+    await shot('crawlclose-2');
+    console.log(JSON.stringify(await g(() => __game.state())));
+  },
   async closeup() {
     await g(() => {
       __game.freeze(true);
@@ -302,7 +400,7 @@ for (const name of wanted.length ? wanted : ['overview']) {
   }
   const t = Date.now();
   if (name !== wanted[0]) {
-    await page.reload({ waitUntil: 'load' });
+    await page.goto(`http://localhost:${PORT}/?test`, { waitUntil: 'load' });
     await page.waitForFunction(() => window.__game && window.__game.ready, null, { timeout: 60000 });
   }
   await scenarios[name]();

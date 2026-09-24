@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clamp, dampAngle, Spring } from '../core/math';
 import { rng } from '../core/rng';
 import { PAL } from '../render/palette';
-import { CharacterModel, DIMS, type CharacterStyle } from './characterModel';
+import { CharacterModel, DIMS, type CharacterStyle, type Side } from './characterModel';
 import { J, type Ragdoll } from '../physics/ragdoll';
 import type { CharacterBody } from '../physics/world';
 import type { GameCtx, GrassPusher, NoiseListener } from '../game/context';
@@ -13,6 +13,10 @@ import { sfx } from '../audio/sfx';
 import type { Player } from './player';
 
 export type ZombieType = 'shambler' | 'runner' | 'brute';
+
+/** Where a bullet landed on a standing zombie. */
+export type HitPart = 'head' | 'torso' | 'legL' | 'legR' | 'armL' | 'armR';
+export type HitParts = Partial<Record<HitPart, number>>;
 
 interface ZDef {
   hp: number;
@@ -90,6 +94,13 @@ export class Zombie implements NoiseListener, GrassPusher {
   private neckBleedT = 0;
   private lastImpactSfx = 0;
   private variant: number;
+  /** Damage taken in the legs: enough of it makes them limp, then crawl. */
+  private legDmg = 0;
+  /** Limping on this leg (0 = left, 1 = right), or -1. */
+  limpSide: -1 | Side = -1;
+  /** Legs are gone for good: drags itself with its arms. */
+  crawl = false;
+  private armBleed: [number, number] = [0, 0];
   onDeath: ((z: Zombie) => void) | null = null;
   /** Debug: stand still (used to stage screenshots). */
   frozen = false;
@@ -109,6 +120,7 @@ export class Zombie implements NoiseListener, GrassPusher {
     this.model = new CharacterModel(styleFor(type, variant));
     ctx.root.add(this.model.root);
     ctx.root.add(this.model.shadow);
+    this.model.ground = (gx, gz) => ctx.groundAt(gx, gz);
     this.pos.set(x, 0, z);
     this.home = this.pos.clone();
     this.target.copy(this.home);
@@ -171,32 +183,123 @@ export class Zombie implements NoiseListener, GrassPusher {
 
   // ------------------------------------------------------------------ damage
 
+  /** Which part of the standing body a world-space point is on. */
+  classify(p: THREE.Vector3, headshot: boolean): HitPart {
+    if (headshot) return 'head';
+    const s = this.model.s;
+    const dx = p.x - this.pos.x;
+    const dz = p.z - this.pos.z;
+    // model +X ("left" parts) in world space is (cos yaw, 0, -sin yaw)
+    const lx = dx * Math.cos(this.yaw) - dz * Math.sin(this.yaw);
+    if (this.crawl) {
+      const lz = dx * Math.sin(this.yaw) + dz * Math.cos(this.yaw);
+      return lz < -0.2 * s ? (lx > 0 ? 'legL' : 'legR') : 'torso';
+    }
+    const y = p.y - this.pos.y;
+    if (y < (DIMS.hipY + 0.05) * s) return lx > 0 ? 'legL' : 'legR';
+    if (y > (DIMS.shoulderY - 0.2) * s && y < (DIMS.shoulderY + 0.12) * s && Math.abs(lx) > DIMS.shoulderX * s * 0.6) return lx > 0 ? 'armL' : 'armR';
+    return 'torso';
+  }
+
   /**
    * @param impulse total bullet impulse (N·s) in world space
    * @param shotDist distance from the shooter (for point-blank bonuses)
+   * @param parts damage per body part (localized reactions)
    */
-  takeHit(damage: number, impulse: THREE.Vector3, point: THREE.Vector3, headshot: boolean, weapon: 'pistol' | 'shotgun' | 'blast', shotDist: number): boolean {
+  takeHit(
+    damage: number,
+    impulse: THREE.Vector3,
+    point: THREE.Vector3,
+    headshot: boolean,
+    weapon: 'pistol' | 'shotgun' | 'blast',
+    shotDist: number,
+    parts: HitParts = {},
+  ): boolean {
     if (this.dead) return false;
     this.hp -= damage;
     this.alert();
     this.model.flash(0.08);
+    this.model.jiggle(headshot ? 6 : 3);
     this.headSnap.kick(headshot ? 14 : 6);
     this.squash.kick(3);
     const dir = impulse.clone().normalize();
     const blood = clamp(damage * 3, 3, 10);
     this.ctx.fx.bloodBurst(point, dir, blood, weapon === 'shotgun' ? 1.3 : 1);
     sfx.hitFlesh(point, weapon === 'shotgun');
+    // shotgun at close range can take an arm clean off
+    if (weapon === 'shotgun' && shotDist < 6) {
+      for (const side of [0, 1] as Side[]) {
+        const d = parts[side === 0 ? 'armL' : 'armR'] ?? 0;
+        if (d >= 1.4 && rng.chance(this.hp <= 0 ? 0.85 : 0.7)) this.tearArm(side, dir);
+      }
+    }
+    if (headshot && this.model.style.hat === 'straw' && rng.chance(this.hp <= 0 ? 0.9 : 0.5)) {
+      this.model.popHat(new THREE.Vector3(dir.x * 3, 4.5, dir.z * 3));
+    }
     if (this.hp <= 0) {
       this.die(impulse, point, headshot, weapon, shotDist);
       return true;
     }
+    this.model.express('zombieHurt', 0.35);
     const kv = impulse.clone().multiplyScalar(this.def.knock / (6 * this.def.mass));
+    // legs: limp, then crawl
+    const legL = parts.legL ?? 0;
+    const legR = parts.legR ?? 0;
+    if (legL + legR > 0 && !this.crawl) {
+      this.legDmg += legL + legR;
+      const maxHp = this.def.hp;
+      if (this.legDmg >= maxHp * 0.5 || (weapon === 'shotgun' && legL + legR >= maxHp * 0.35)) {
+        this.becomeCrawler(kv);
+        return false;
+      }
+      if (this.legDmg >= maxHp * 0.22 && this.limpSide < 0) {
+        this.limpSide = legL >= legR ? 0 : 1;
+        sfx.groan(this.pos, this.def.pitch * 0.9, true);
+      }
+    }
     if (weapon === 'shotgun' && shotDist < 5 && this.type !== 'brute') {
       this.knockDown(kv.multiplyScalar(2).setY(3), 0.4);
     } else {
       this.stagger(kv, weapon === 'shotgun' ? 0.45 : 0.22);
     }
     return false;
+  }
+
+  /** Legs shot out: fall on the face and keep coming on the elbows. */
+  private becomeCrawler(kv: THREE.Vector3): void {
+    this.crawl = true;
+    this.limpSide = -1;
+    const s = this.model.s;
+    this.body.height = 0.62 * s;
+    this.body.headY = 0.36 * s;
+    const fwd = new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    // legs go out from under it: the body pitches forward
+    const v = kv.clone().setY(0).addScaledVector(fwd, 1.2).setY(1.2);
+    this.enterRagdoll(v, 0.2);
+    const rd = this.ragdoll!;
+    for (const f of [J.footL, J.footR]) rd.addVelocity(f, -fwd.x * 3.5, 2.5, -fwd.z * 3.5);
+    rd.addVelocity(J.head, fwd.x * 2, 0, fwd.z * 2);
+    this.state = 'down';
+    this.settleT = 0;
+    this.stateT = 0;
+    sfx.groan(this.pos, this.def.pitch * 0.85, true);
+  }
+
+  /** Tear an arm off (alive or as a ragdoll). */
+  tearArm(side: Side, dir: THREE.Vector3): void {
+    const vel = new THREE.Vector3(dir.x * rng.range(4, 6.5), rng.range(3, 5), dir.z * rng.range(4, 6.5));
+    const at = this.model.tearArm(side, vel, 18);
+    if (!at) return;
+    if (this.ragdoll) {
+      const idx = side === 0 ? J.handL : J.handR;
+      this.ragdoll.detach(idx);
+      this.ragdoll.r[idx] = 0.001;
+      this.ragdoll.w[idx] = 1000;
+    }
+    this.armBleed[side] = 1.4;
+    this.ctx.fx.bloodBurst(at, dir, 10, 1.3);
+    this.ctx.fx.gibs(at, dir, 3);
+    sfx.splat(at);
   }
 
   private stagger(v: THREE.Vector3, t: number): void {
@@ -262,6 +365,9 @@ export class Zombie implements NoiseListener, GrassPusher {
         this.onDeath?.(this);
       }
     }
+    if ((particle === J.handL || particle === J.handR || particle === J.shoulderL || particle === J.shoulderR) && weapon === 'shotgun' && dist < 5 && rng.chance(0.45)) {
+      this.tearArm(particle === J.handL || particle === J.shoulderL ? 0 : 1, dir);
+    }
     if (particle === J.head && !rd.headDetached && weapon === 'shotgun' && dist < 4 && rng.chance(0.5)) {
       rd.detach(J.head);
       rd.addVelocity(J.head, dir.x * 6, 5, dir.z * 6);
@@ -300,6 +406,7 @@ export class Zombie implements NoiseListener, GrassPusher {
     }
     if (weapon === 'shotgun' && shotDist < 6) this.ctx.fx.gibs(point, dir, 5);
     if (weapon === 'blast') this.ctx.fx.gibs(point, dir, 7);
+    if (rng.chance(this.model.style.hat === 'straw' ? 0.85 : 0.6)) this.model.popHat(new THREE.Vector3(launch.x * 0.6 + rng.spread(1.5), 4 + rng.next() * 2.5, launch.z * 0.6 + rng.spread(1.5)));
     this.ctx.fx.bloodBurst(point, dir, 14, 1.5);
     sfx.groan(this.pos, this.def.pitch * 1.25, true);
     sfx.splat(point);
@@ -324,6 +431,8 @@ export class Zombie implements NoiseListener, GrassPusher {
       const k = 0.55 + strength * 0.45;
       const launch = dir.clone().multiplyScalar(rng.range(3.2, 5.5) * k * this.def.launch).setY(rng.range(7.5, 9.5) * k);
       if (!this.ragdoll) this.enterRagdoll(launch, 1.4);
+      this.model.popHat(new THREE.Vector3(launch.x * 0.8 + rng.spread(2), launch.y * 0.9, launch.z * 0.8 + rng.spread(2)), 20);
+      if (rng.chance(0.35 * strength)) this.tearArm(rng.chance(0.5) ? 0 : 1, dir.clone().setY(0.6).normalize());
       if (rng.chance(0.3)) {
         this.ragdoll!.detach(J.head);
         this.ragdoll!.addVelocity(J.head, rng.spread(4), 9, rng.spread(4));
@@ -338,6 +447,7 @@ export class Zombie implements NoiseListener, GrassPusher {
     } else {
       this.hp -= dmg;
       this.model.flash(0.1);
+      this.model.popHat(dir.clone().multiplyScalar(4).setY(6), 20);
       this.knockDown(dir.clone().multiplyScalar(8 * strength * this.def.knock).setY(6 * strength), 1);
     }
   }
@@ -345,21 +455,35 @@ export class Zombie implements NoiseListener, GrassPusher {
   // ------------------------------------------------------------------ update
 
   update(dt: number, t: number): void {
-    this.model.updateFlash(dt);
     this.headSnap.update(dt);
     this.squash.update(dt);
     if (this.ragdoll) {
       this.updateRagdoll(dt);
-      return;
-    }
-    if (!this.frozen) {
-      this.think(dt, t);
-      this.move(dt);
+      if (this.removed) return;
     } else {
-      this.vel.set(0, 0, 0);
+      if (!this.frozen) {
+        this.think(dt, t);
+        this.move(dt);
+      } else {
+        this.vel.set(0, 0, 0);
+      }
+      this.animate(dt, t);
+      this.sync();
     }
-    this.animate(dt, t);
-    this.sync();
+    this.model.update(dt);
+    this.bleedStumps(dt);
+  }
+
+  private bleedStumps(dt: number): void {
+    for (const side of [0, 1] as Side[]) {
+      if (this.armBleed[side] <= 0) continue;
+      this.armBleed[side] -= dt;
+      if (Math.random() > 0.55) continue;
+      const at = this.model.shoulderWorld(side);
+      const out = at.clone().sub(this.model.torso.getWorldPosition(new THREE.Vector3())).normalize();
+      const v = out.multiplyScalar(2.2).add(new THREE.Vector3(rng.spread(0.8), 1.6, rng.spread(0.8)));
+      this.ctx.fx.particles.drops.spawn(at, v, rng.range(0.03, 0.055), PAL.blood, 0, 1.2);
+    }
   }
 
   private think(dt: number, _t: number): void {
@@ -400,10 +524,11 @@ export class Zombie implements NoiseListener, GrassPusher {
           this.home.copy(this.pos);
           break;
         }
-        if (dist < this.def.reach) {
+        if (dist < this.def.reach * (this.crawl ? 0.85 : 1)) {
           this.state = 'windup';
           this.stateT = this.def.windup;
           this.squash.kick(-2);
+          this.model.express('zombieAttack', this.def.windup + 0.35);
           sfx.groan(this.pos, this.def.pitch * 1.1, true);
         }
         break;
@@ -412,8 +537,9 @@ export class Zombie implements NoiseListener, GrassPusher {
           this.state = 'lunge';
           this.stateT = 0.2;
           const l = dist || 1;
-          this.vel.x = (dx / l) * this.def.speed * 2.6 + this.vel.x * 0.2;
-          this.vel.z = (dz / l) * this.def.speed * 2.6 + this.vel.z * 0.2;
+          const sp = this.speed * (this.crawl ? 2.2 : 2.6);
+          this.vel.x = (dx / l) * sp + this.vel.x * 0.2;
+          this.vel.z = (dz / l) * sp + this.vel.z * 0.2;
           if (this.type === 'runner') {
             this.vel.x *= 1.3;
             this.vel.z *= 1.3;
@@ -439,6 +565,7 @@ export class Zombie implements NoiseListener, GrassPusher {
         break;
       case 'getup':
         if (this.stateT <= 0) {
+          this.model.endBlend();
           this.state = 'chase';
           this.alerted = true;
         }
@@ -454,7 +581,7 @@ export class Zombie implements NoiseListener, GrassPusher {
     let speed = 0;
     const p = this.player;
     if (this.state === 'chase') {
-      speed = this.def.speed;
+      speed = this.speed;
       const clear = this.ctx.physics.segmentClear(this.pos.x, this.pos.z, p.pos.x, p.pos.z, 0.6, this.def.radius * 0.9);
       if (clear) {
         tx = p.pos.x - this.pos.x;
@@ -467,7 +594,7 @@ export class Zombie implements NoiseListener, GrassPusher {
         tz = p.pos.z - this.pos.z;
       }
     } else if (this.state === 'wander') {
-      speed = this.def.speed * 0.35;
+      speed = this.speed * 0.35;
       tx = this.target.x - this.pos.x;
       tz = this.target.z - this.pos.z;
       if (Math.hypot(tx, tz) < 0.3) speed = 0;
@@ -524,6 +651,12 @@ export class Zombie implements NoiseListener, GrassPusher {
     this.pushPos.copy(this.pos);
   }
 
+  /** Current top speed (legs shot → slower). */
+  get speed(): number {
+    if (this.crawl) return Math.max(0.55, this.def.speed * 0.42);
+    return this.def.speed * (this.limpSide >= 0 ? 0.62 : 1);
+  }
+
   /** Separate from another zombie / the player. */
   separate(ox: number, oz: number, r: number, push = 0.5): void {
     if (this.ragdoll) return;
@@ -542,63 +675,146 @@ export class Zombie implements NoiseListener, GrassPusher {
   private animate(dt: number, t: number): void {
     const m = this.model;
     const sp = Math.hypot(this.vel.x, this.vel.z);
-    const sf = clamp(sp / Math.max(1, this.def.speed), 0, 1.5);
+    const sf = clamp(sp / Math.max(0.5, this.speed), 0, 1.5);
     const run = this.type === 'runner';
     const brute = this.type === 'brute';
-    this.phase += dt * (brute ? 3.2 : run ? 11 : 4.6) * Math.max(sf, this.state === 'idle' ? 0 : 0.15);
-    const ph = this.phase;
-    const s = Math.sin(ph);
-    const limp = this.variant % 2 ? 1 : -1;
-    let lean = run ? 0.32 * sf : 0.16 + 0.05 * sf;
-    let roll = Math.sin(ph) * (brute ? 0.07 : 0.09) * sf;
-    let armX = -1.35 + Math.sin(ph * 0.5 + 0.3) * 0.12;
-    let armLX = armX + Math.sin(t * 2.1 + this.variant) * 0.12;
-    let armRX = armX + Math.sin(t * 1.7 + 1 + this.variant) * 0.12;
-    let armZ = 0.12;
-    if (run) {
-      armLX = -0.7 + s * 1.1;
-      armRX = -0.7 - s * 1.1;
-      armZ = 0.25;
+    const limping = this.limpSide >= 0;
+    const rate = this.crawl ? 5.5 : brute ? 3.2 : run ? 11 : limping ? 3.8 : 4.6;
+    this.phase += dt * rate * Math.max(sf, this.state === 'idle' ? 0 : 0.15);
+    if (this.crawl) {
+      this.animateCrawl(t, sf);
+    } else {
+      const ph = this.phase;
+      const s = Math.sin(ph);
+      const c = Math.cos(ph);
+      const tilt = this.variant % 2 ? 1 : -1;
+      let lean = run ? 0.32 * sf : 0.16 + 0.05 * sf;
+      let roll = Math.sin(ph) * (brute ? 0.07 : 0.09) * sf;
+      let armX = -1.35 + Math.sin(ph * 0.5 + 0.3) * 0.12;
+      let armLX = armX + Math.sin(t * 2.1 + this.variant) * 0.12;
+      let armRX = armX + Math.sin(t * 1.7 + 1 + this.variant) * 0.12;
+      let armZ = 0.12;
+      // elbows: shamblers reach almost straight, runners pump, brutes swing heavy
+      let elL = -0.12 + Math.sin(t * 1.9 + this.variant) * 0.1;
+      let elR = -0.12 + Math.sin(t * 2.3 + this.variant * 2) * 0.1;
+      if (run) {
+        armLX = -0.7 + s * 1.1;
+        armRX = -0.7 - s * 1.1;
+        armZ = 0.25;
+        elL = -1.25 + s * 0.25;
+        elR = -1.25 - s * 0.25;
+      }
+      if (brute) {
+        armLX = -0.35 + s * 0.35;
+        armRX = -0.35 - s * 0.35;
+        armZ = 0.2;
+        elL = -0.3 - Math.max(0, s) * 0.4;
+        elR = -0.3 - Math.max(0, -s) * 0.4;
+      }
+      let squashY = 0;
+      if (this.state === 'windup') {
+        const k = 1 - Math.max(0, this.stateT) / this.def.windup;
+        armLX = armRX = -2.5 * k + armLX * (1 - k);
+        elL = elR = -1.2 * k + elL * (1 - k);
+        lean = -0.18 * k;
+        squashY = -0.06 * k;
+      } else if (this.state === 'lunge') {
+        armLX = armRX = -1.1;
+        elL = elR = 0;
+        lean = 0.45;
+      } else if (this.state === 'recover') {
+        armLX = armRX = -0.9;
+        elL = elR = -0.35;
+        lean = 0.25;
+      }
+      if (this.staggerAmt > 0) {
+        const k = Math.min(1, this.staggerAmt);
+        lean = lean * (1 - k) - 0.35 * k;
+        armLX = armLX * (1 - k) + (-2.2 + Math.sin(t * 30) * 0.3) * k;
+        armRX = armRX * (1 - k) + (-2.0 + Math.cos(t * 27) * 0.3) * k;
+        elL = elL * (1 - k) + (-0.7 + Math.sin(t * 23) * 0.5) * k;
+        elR = elR * (1 - k) + (-0.6 + Math.cos(t * 25) * 0.5) * k;
+        roll += Math.sin(t * 20) * 0.08 * k;
+      }
+      const legA = (brute ? 0.5 : run ? 0.95 : 0.6) * Math.min(1, sf + 0.1);
+      // the bad leg swings less and never bends; the body dips when it takes the weight
+      const stiffL = this.limpSide === 0 ? 0.45 : tilt > 0 ? 1 : 0.6;
+      const stiffR = this.limpSide === 1 ? 0.45 : tilt > 0 ? 0.6 : 1;
+      m.legL.rotation.set(s * legA * stiffL, 0, 0.04);
+      m.legR.rotation.set(-s * legA * stiffR, 0, -0.04);
+      const knee = (run ? 1.3 : brute ? 0.6 : 0.8) * Math.min(1, sf + 0.1);
+      m.shinL.rotation.set(this.limpSide === 0 ? 0.02 : 0.1 + Math.max(0, -c) * knee, 0, 0);
+      m.shinR.rotation.set(this.limpSide === 1 ? 0.02 : 0.1 + Math.max(0, c) * knee, 0, 0);
+      m.armL.rotation.set(armLX, 0, -armZ);
+      m.armR.rotation.set(armRX, 0, armZ);
+      m.foreL.rotation.set(elL, 0, 0);
+      m.foreR.rotation.set(elR, 0, 0);
+      let bob = Math.abs(Math.cos(ph)) * (brute ? 0.07 : 0.05) * Math.min(1, sf + 0.2);
+      if (limping) {
+        // weight on the bad leg (its half of the cycle): drop and lurch toward it
+        const bad = this.limpSide === 0 ? Math.max(0, -s) : Math.max(0, s);
+        bob -= bad * 0.07 * Math.min(1, sf + 0.3);
+        roll += (this.limpSide === 0 ? -1 : 1) * (0.06 + bad * 0.16);
+        lean += 0.08;
+      }
+      m.body.position.set(0, bob, 0);
+      m.body.rotation.set(lean, 0, roll);
+      const sq = this.squash.value * 0.05 + squashY;
+      m.body.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.5);
+      m.head.rotation.set(-this.headSnap.value * 0.05 + Math.sin(t * 1.3 + this.variant) * 0.06, Math.sin(t * 0.7 + this.variant) * 0.25, 0.22 * tilt + Math.sin(ph) * 0.05);
+      m.torso.rotation.set(0, 0, 0);
     }
-    if (brute) {
-      armLX = -0.35 + s * 0.35;
-      armRX = -0.35 - s * 0.35;
-      armZ = 0.2;
-    }
-    let squashY = 0;
-    if (this.state === 'windup') {
-      const k = 1 - Math.max(0, this.stateT) / this.def.windup;
-      armLX = armRX = -2.5 * k + armLX * (1 - k);
-      lean = -0.18 * k;
-      squashY = -0.06 * k;
-    } else if (this.state === 'lunge') {
-      armLX = armRX = -1.1;
-      lean = 0.45;
-    } else if (this.state === 'recover') {
-      armLX = armRX = -0.9;
-      lean = 0.25;
-    }
-    if (this.staggerAmt > 0) {
-      const k = Math.min(1, this.staggerAmt);
-      lean = lean * (1 - k) - 0.35 * k;
-      armLX = armLX * (1 - k) + (-2.2 + Math.sin(t * 30) * 0.3) * k;
-      armRX = armRX * (1 - k) + (-2.0 + Math.cos(t * 27) * 0.3) * k;
-      roll += Math.sin(t * 20) * 0.08 * k;
-    }
-    const legA = (brute ? 0.5 : run ? 0.95 : 0.6) * Math.min(1, sf + 0.1);
-    m.legL.rotation.set(s * legA * (limp > 0 ? 1 : 0.6), 0, 0.04);
-    m.legR.rotation.set(-s * legA * (limp > 0 ? 0.6 : 1), 0, -0.04);
-    m.armL.rotation.set(armLX, 0, -armZ);
-    m.armR.rotation.set(armRX, 0, armZ);
-    const bob = Math.abs(Math.cos(ph)) * (brute ? 0.07 : 0.05) * Math.min(1, sf + 0.2);
-    m.body.position.set(0, bob, 0);
-    m.body.rotation.set(lean, 0, roll);
-    const sq = this.squash.value * 0.05 + squashY;
-    m.body.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.5);
-    m.head.rotation.set(-this.headSnap.value * 0.05 + Math.sin(t * 1.3 + this.variant) * 0.06, Math.sin(t * 0.7 + this.variant) * 0.25, 0.22 * limp + Math.sin(ph) * 0.05);
     if (this.state === 'getup') {
       this.model.applyBlend(1 - this.stateT / 0.7);
     }
+  }
+
+  /** Face down, pulling itself along with alternating arms, legs dragging behind. */
+  private animateCrawl(t: number, sf: number): void {
+    const m = this.model;
+    const s = m.s;
+    const ph = this.phase;
+    let theta = 1.32;
+    let reachL = -1.84 - 0.5 * Math.cos(ph);
+    let reachR = -1.84 + 0.5 * Math.cos(ph);
+    // lift the hand while it travels forward again
+    let elL = -0.25 - 0.8 * Math.max(0, Math.sin(ph));
+    let elR = -0.25 - 0.8 * Math.max(0, -Math.sin(ph));
+    let headX = -1.15 + Math.sin(t * 1.4 + this.variant) * 0.08;
+    if (this.state === 'windup') {
+      const k = 1 - Math.max(0, this.stateT) / this.def.windup;
+      theta = 1.32 - 0.5 * k;
+      reachL = reachR = reachL * (1 - k) - 2.9 * k;
+      elL = elR = elL * (1 - k) - 0.9 * k;
+      headX = -1.15 + 0.35 * k;
+    } else if (this.state === 'lunge') {
+      theta = 1.2;
+      reachL = reachR = -2.5;
+      elL = elR = 0;
+    } else if (this.staggerAmt > 0) {
+      const k = Math.min(1, this.staggerAmt);
+      reachL += Math.sin(t * 30) * 0.4 * k;
+      reachR += Math.cos(t * 27) * 0.4 * k;
+      theta += 0.1 * k;
+    }
+    const roll = Math.sin(ph) * 0.12 * Math.min(1, sf + 0.2);
+    const ty = DIMS.torsoY * s;
+    // keep the chest above the root (so hits and shadows line up) and just off the ground
+    m.body.rotation.set(theta, 0, roll);
+    m.body.position.set(0, 0.2 * s - ty * Math.cos(theta), -ty * Math.sin(theta));
+    const sq = this.squash.value * 0.04;
+    m.body.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.5);
+    m.armL.rotation.set(reachL, 0, -0.18);
+    m.armR.rotation.set(reachR, 0, 0.18);
+    m.foreL.rotation.set(elL, 0, 0);
+    m.foreR.rotation.set(elR, 0, 0);
+    // legs drag, a little twitch in the knees
+    m.legL.rotation.set(0.08 + Math.sin(ph + 1) * 0.06, 0, 0.14);
+    m.legR.rotation.set(0.08 - Math.sin(ph + 1) * 0.06, 0, -0.14);
+    m.shinL.rotation.set(0.25 + Math.max(0, Math.sin(ph * 0.5 + t)) * 0.3, 0, 0);
+    m.shinR.rotation.set(0.25 + Math.max(0, Math.cos(ph * 0.5 + t)) * 0.3, 0, 0);
+    m.head.rotation.set(headX - this.headSnap.value * 0.04, Math.sin(t * 0.8 + this.variant) * 0.2, Math.sin(ph) * 0.08);
+    m.torso.rotation.set(0, Math.sin(ph) * 0.12, 0);
   }
 
   private sync(): void {

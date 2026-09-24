@@ -385,7 +385,8 @@ export class Game implements GameCtx {
       const d = Math.hypot(hit.point.x - this.player.pos.x, hit.point.z - this.player.pos.z);
       if (d > 1.4) {
         this.aimPoint.copy(hit.point);
-        if (hit.kind === 'character') this.aimPoint.y = Math.max(gunY - 0.1, Math.min(hit.point.y, gunY + 0.35));
+        // aim where the cursor is on the body: low for legs (and crawlers), capped above the head
+        if (hit.kind === 'character') this.aimPoint.y = Math.max(this.player.pos.y + 0.12, Math.min(hit.point.y, gunY + 0.35));
         return;
       }
     }

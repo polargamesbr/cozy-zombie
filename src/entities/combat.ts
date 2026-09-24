@@ -5,7 +5,7 @@ import { GLOBAL_UNIFORMS } from '../render/materials';
 import type { GameCtx } from '../game/context';
 import type { CharacterBody } from '../physics/world';
 import type { WeaponDef } from './weapons';
-import { Zombie } from './zombie';
+import { Zombie, type HitParts } from './zombie';
 import { inPond, LAYOUT } from '../world/layout';
 import type { Pond } from '../world/pond';
 import { sfx } from '../audio/sfx';
@@ -16,6 +16,7 @@ interface Accum {
   point: THREE.Vector3;
   head: boolean;
   dist: number;
+  parts: HitParts;
 }
 
 const _d = new THREE.Vector3();
@@ -53,10 +54,14 @@ export class Combat {
           if (owner instanceof Zombie) {
             let acc = perZombie.get(owner);
             if (!acc) {
-              acc = { damage: 0, impulse: new THREE.Vector3(), point: hit.point.clone(), head: false, dist: hit.distance };
+              acc = { damage: 0, impulse: new THREE.Vector3(), point: hit.point.clone(), head: false, dist: hit.distance, parts: {} };
               perZombie.set(owner, acc);
             }
-            acc.damage += dmg * (hit.headshot ? 1.8 : 1);
+            // legs maim more than they kill
+            const part = owner.classify(hit.point, !!hit.headshot);
+            const pd = dmg * (part === 'head' ? 1.8 : part === 'legL' || part === 'legR' ? 0.75 : 1);
+            acc.damage += pd;
+            acc.parts[part] = (acc.parts[part] ?? 0) + pd;
             acc.impulse.addScaledVector(d, force);
             acc.head ||= !!hit.headshot;
             acc.dist = Math.min(acc.dist, hit.distance);
@@ -103,7 +108,7 @@ export class Combat {
     }
     for (const [z, acc] of perZombie) {
       hits++;
-      if (z.takeHit(acc.damage, acc.impulse, acc.point, acc.head, w.id, acc.dist)) kills++;
+      if (z.takeHit(acc.damage, acc.impulse, acc.point, acc.head, w.id, acc.dist, acc.parts)) kills++;
     }
 
     // ---- feel
