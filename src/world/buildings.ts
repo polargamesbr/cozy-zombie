@@ -19,8 +19,9 @@ function mesh(geo: THREE.BufferGeometry, mat: THREE.Material, shadow = true): TH
 }
 
 /** Curtain material: a soft cloth wave in the vertex shader. */
-function curtainMaterial(color: number): THREE.MeshToonMaterial {
-  const m = toonUnique(color, { side: THREE.DoubleSide });
+/** Vertex-colored curtains that sway toward/away from the glass (along their own normal). */
+function curtainMaterial(): THREE.MeshToonMaterial {
+  const m = toonUnique(0xffffff, { side: THREE.DoubleSide, vertexColors: true });
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = GLOBAL_UNIFORMS.uTime;
     shader.vertexShader = shader.vertexShader
@@ -28,13 +29,36 @@ function curtainMaterial(color: number): THREE.MeshToonMaterial {
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
-         float hang = clamp((0.5 - uv.y), 0.0, 1.0);
-         transformed.z += sin(uTime * 1.7 + position.x * 9.0 + position.y * 3.0) * 0.025 * (0.4 + hang);
-         transformed.x += sin(uTime * 1.1 + position.y * 4.0) * 0.012 * hang;`,
+         {
+           float hang = clamp((0.5 - uv.y), 0.0, 1.0);
+           vec3 side = normalize(cross(vec3(0.0, 1.0, 0.0), normal) + vec3(1e-4, 0.0, 0.0));
+           float ph = position.x * 9.0 + position.z * 9.0 + position.y * 3.0;
+           transformed += normal * sin(uTime * 1.7 + ph) * 0.025 * (0.4 + hang);
+           transformed += side * sin(uTime * 1.1 + position.y * 4.0) * 0.012 * hang;
+         }`,
       );
   };
-  m.customProgramCacheKey = () => 'curtain';
+  m.customProgramCacheKey = () => 'curtain-vc';
   return m;
+}
+
+/**
+ * Collects every window's interior glow and curtains of one building so they draw as two
+ * meshes (instead of three per window).
+ */
+class WindowBatch {
+  readonly glow = new GeoBuilder();
+  readonly curtains = new GeoBuilder();
+
+  build(group: THREE.Group): void {
+    if (!this.glow.empty) {
+      // vertex colors carry each glow's own warmth; the material color is the day/night multiplier
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: true });
+      WINDOW_GLOWS.push({ mat, base: new THREE.Color(1, 1, 1) });
+      group.add(new THREE.Mesh(this.glow.build(), mat));
+    }
+    if (!this.curtains.empty) group.add(new THREE.Mesh(this.curtains.build(), curtainMaterial()));
+  }
 }
 
 function glowMaterial(color: number, k: number): THREE.MeshBasicMaterial {
@@ -45,12 +69,8 @@ function glowMaterial(color: number, k: number): THREE.MeshBasicMaterial {
 }
 
 /** A framed window with glow, curtains, shutters and an optional flower box (local +Z facing). */
-function addWindow(b: GeoBuilder, group: THREE.Group, x: number, y: number, z: number, w: number, h: number, rotY: number, opts: { shutters?: boolean; flowers?: boolean; curtain?: number } = {}): void {
-  const g = new THREE.Group();
-  g.position.set(x, y, z);
-  g.rotation.y = rotY;
-  group.add(g);
-  const m = new THREE.Matrix4().compose(g.position, g.quaternion, new THREE.Vector3(1, 1, 1));
+function addWindow(b: GeoBuilder, wb: WindowBatch, x: number, y: number, z: number, w: number, h: number, rotY: number, opts: { shutters?: boolean; flowers?: boolean; curtain?: number } = {}): void {
+  const m = compose(x, y, z, 0, rotY, 0);
   const local = (geo: THREE.BufferGeometry, color: number, lm: THREE.Matrix4) => b.add(geo, color, m.clone().multiply(lm));
   const t = 0.09;
   // frame
@@ -62,11 +82,9 @@ function addWindow(b: GeoBuilder, group: THREE.Group, x: number, y: number, z: n
   local(box(0.05, h, 0.04), PAL.houseTrim, compose(0, 0, 0.05));
   local(box(w, 0.05, 0.04), PAL.houseTrim, compose(0, h * 0.08, 0.05));
   // inner glow (interior light) sits just inside the wall
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(w, h), glowMaterial(PAL.windowGlow, 1.05));
-  glow.position.z = -0.02;
-  g.add(glow);
+  wb.glow.add(new THREE.PlaneGeometry(w, h), new THREE.Color(PAL.windowGlow).multiplyScalar(1.05), m.clone().multiply(compose(0, 0, -0.02)));
   // curtains
-  const cm = curtainMaterial(opts.curtain ?? PAL.curtain);
+  const curtain = opts.curtain ?? PAL.curtain;
   for (const s of [-1, 1]) {
     const cg = new THREE.PlaneGeometry(w * 0.32, h * 0.96, 4, 6);
     const pos = cg.getAttribute('position');
@@ -78,10 +96,7 @@ function addWindow(b: GeoBuilder, group: THREE.Group, x: number, y: number, z: n
       pos.setX(i, (xx + w * 0.16) * pinch - w * 0.16);
     }
     cg.computeVertexNormals();
-    const c = new THREE.Mesh(cg, cm);
-    c.position.set(s * (w / 2 - w * 0.16), 0, 0.005);
-    c.scale.x = s;
-    g.add(c);
+    wb.curtains.add(cg, curtain, m.clone().multiply(compose(s * (w / 2 - w * 0.16), 0, 0.005, 0, 0, 0, s, 1, 1)));
   }
   if (opts.shutters) {
     for (const s of [-1, 1]) {
@@ -212,19 +227,18 @@ export class House implements Updatable {
     this.group.add(this.door);
     this.doorWorld.set(H.x, 0, H.z + d / 2 + 0.2);
 
-    addWindow(b, this.group, -2.35, base + 1.5, fz, 1.1, 1.0, 0, { shutters: true, flowers: true });
-    addWindow(b, this.group, 2.35, base + 1.5, fz, 1.1, 1.0, 0, { shutters: true, flowers: true });
-    addWindow(b, this.group, w / 2 + 0.02, base + 1.5, 0.2, 1.0, 1.0, Math.PI / 2, { curtain: 0xf6d38a });
-    addWindow(b, this.group, -w / 2 - 0.02, base + 1.5, 0.2, 1.0, 1.0, -Math.PI / 2, { curtain: 0xb9d6e8 });
-    addWindow(b, this.group, 1.6, base + 1.5, -d / 2 - 0.02, 1.0, 0.9, Math.PI, {});
+    const wb = new WindowBatch();
+    addWindow(b, wb, -2.35, base + 1.5, fz, 1.1, 1.0, 0, { shutters: true, flowers: true });
+    addWindow(b, wb, 2.35, base + 1.5, fz, 1.1, 1.0, 0, { shutters: true, flowers: true });
+    addWindow(b, wb, w / 2 + 0.02, base + 1.5, 0.2, 1.0, 1.0, Math.PI / 2, { curtain: 0xf6d38a });
+    addWindow(b, wb, -w / 2 - 0.02, base + 1.5, 0.2, 1.0, 1.0, -Math.PI / 2, { curtain: 0xb9d6e8 });
+    addWindow(b, wb, 1.6, base + 1.5, -d / 2 - 0.02, 1.0, 0.9, Math.PI, {});
     // round attic windows in both gable ends
     for (const sx of [-1, 1]) {
       b.add(cyl(0.3, 0.3, 0.1, 16), PAL.houseTrim, compose(sx * (w / 2 + 0.02), yWall + 0.62, 0, 0, 0, Math.PI / 2));
-      const atticGlow = new THREE.Mesh(new THREE.CircleGeometry(0.22, 16), glowMaterial(PAL.windowGlow, 0.85));
-      atticGlow.position.set(sx * (w / 2 + 0.075), yWall + 0.62, 0);
-      atticGlow.rotation.y = sx * Math.PI / 2;
-      this.group.add(atticGlow);
+      wb.glow.add(new THREE.CircleGeometry(0.22, 16), new THREE.Color(PAL.windowGlow).multiplyScalar(0.85), compose(sx * (w / 2 + 0.075), yWall + 0.62, 0, 0, sx * Math.PI / 2, 0));
     }
+    wb.build(this.group);
 
     // ---- porch
     const pz = d / 2 + 0.95;
@@ -502,11 +516,9 @@ export class Barn implements Updatable {
     this.group.add(loftHay);
     b.add(beam(new THREE.Vector3(-0.62, ly - 0.55, fz + 0.1), new THREE.Vector3(0.62, ly + 0.55, fz + 0.1), 0.1, 0.05), PAL.barnTrim);
     // side windows
-    for (const sx of [-1, 1]) {
-      const g = new THREE.Group();
-      addWindow(b, g, sx * (hw + 0.03), base + 2.1, 0, 0.9, 0.8, sx * Math.PI / 2, { curtain: 0xe8d7a8 });
-      this.group.add(g);
-    }
+    const wb = new WindowBatch();
+    for (const sx of [-1, 1]) addWindow(b, wb, sx * (hw + 0.03), base + 2.1, 0, 0.9, 0.8, sx * Math.PI / 2, { curtain: 0xe8d7a8 });
+    wb.build(this.group);
     // weather vane
     this.vane.position.set(0, base + ridge + 0.1, d / 2 - 1.2);
     const vb = new GeoBuilder();

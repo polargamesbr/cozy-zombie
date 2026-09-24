@@ -11,6 +11,7 @@ const CONTROLS = `
     <div><kbd>Q</kbd><kbd>E</kbd><span>girar câmera (ou botão direito)</span></div>
     <div><kbd>Roda</kbd><span>zoom</span></div>
     <div><kbd>M</kbd><span>som</span> <kbd>P</kbd><span>qualidade</span> <kbd>Esc</kbd><span>pausa</span></div>
+    <div class="pad-line"><kbd>🎮</kbd><span>RT atira · A rola · B chuta · LT dinamite · Y troca</span></div>
   </div>`;
 
 /** Title / pause / game-over cards, all HTML+CSS. */
@@ -38,7 +39,7 @@ export class Overlay {
           <div class="logo"><span class="logo-cozy">Cozy</span><span class="logo-zombie">Zombie</span></div>
           <p class="tagline">Uma tarde tranquila na fazenda… quase.</p>
           ${CONTROLS}
-          <div class="cta">Clique para começar</div>
+          <div class="cta">Clique (ou A) para começar</div>
         </div>`;
     } else if (mode === 'pause') {
       this.root.innerHTML = `

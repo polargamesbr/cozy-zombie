@@ -155,15 +155,32 @@ basta reduzir `count`). `Game.trackPerf` mede o FPS médio a cada ~2 s (ignorand
 padrão inicial é Média),
 `I` mostra o FPS. O shader da grama usa transposta/escala em vez de `inverse(mat3)` por vértice.
 
+Draw calls: cada trecho de cerca é um `THREE.BatchedMesh` (cada vão é uma instância que o
+`FenceSegment` inclina ao balançar e esconde ao quebrar); o brilho e as cortinas de todas as
+janelas de um prédio viram duas malhas (`WindowBatch`, cor por vértice; a cortina balança ao
+longo da própria normal); a grama é dividida em blocos de 16 m, cada um um `InstancedMesh` com
+bounding sphere própria, então o que está fora da tela não é desenhado.
+
+## Controle
+
+`core/gamepad.ts` (`Pad`): lê o primeiro controle com mapeamento padrão uma vez por frame
+(zona morta radial, bordas de botão), `active` diz se foi o último dispositivo usado (mexer o
+mouse ou teclar volta para mouse/teclado). `Game.readInput` soma analógico + teclado,
+`computePadAim` faz a mira twin-stick com assistência e a mira do HUD vai para a projeção do
+ponto mirado. `Game.shake(trauma)` também chama `Pad.rumble` (dois motores; um pedido mais fraco
+nunca corta um mais forte ainda tocando). Nos testes, `__game.pad({axes, buttons})` pluga um
+controle falso e `__game.rumbles` registra as vibrações pedidas.
+
 ## Testes e QA visual
 
-- `npm test` — Vitest (física do ragdoll: voo + derrapagem curta, repouso, desencaixe suave).
+- `npm test` — Vitest (física do ragdoll: voo + derrapagem curta, repouso, desencaixe suave, água;
+  flow field com cercas; controle: zona morta, bordas, vibração).
 - `npm run typecheck` — TypeScript estrito.
 - `npm run build && npm run shots -- overview combat explosion` — abre o jogo no Chromium
   headless (SwiftShader) em `?test` (tempo manual e seed fixa) e salva screenshots em `shots/`.
   Cenários disponíveis em `scripts/shots.mjs` (overview, wide, barn, pond, closeup, combat,
   explosion, chase, title, pick, limbs, crawl, crawlclose, faces, death, dodge, kick, dynamite,
-  killcam, truck, fences, barnhorde, daycycle, repair…).
+  killcam, truck, fences, barnhorde, daycycle, repair, gamepad…).
 - `window.__game` (em qualquer modo): `advance(s)`, `teleport(x,z)`, `aim(x,z)`, `fire()`,
   `spawn(tipo,x,z)`, `explode(x,z)`, `camera({yaw,zoom})`, `hit(i,parte,dano)`, `tearArm(i,lado)`,
   `express(i,rosto,s)`, `kick()`, `holdThrow(x,z)`/`releaseThrow()`, `day(t)`, `wave(n)`,

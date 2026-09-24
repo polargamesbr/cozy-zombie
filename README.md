@@ -30,6 +30,10 @@ WASD andar · mouse mira/atira · Espaço rola · R recarrega · 1/2 troca arma 
 G (segurar/soltar) dinamite · Q/E (ou botão direito) gira a câmera · roda dá zoom · M som ·
 C (segurar) conserta cerca · P qualidade · I mostra FPS · Esc pausa · N chama a próxima horda na hora.
 
+**Controle** (Xbox/PlayStation, mapeamento padrão): analógicos andam e miram (com mira assistida
+leve), RT atira, LT dinamite, A rola, B chuta, X recarrega, Y troca arma, LB/RB câmera, ↑ conserta,
+Start pausa. Vibra junto com a tremida da tela.
+
 A qualidade gráfica começa em "Média" (ou no último nível que o ajuste automático escolheu) e
 cai sozinha para Baixa se o FPS ficar abaixo de ~48; `P` sobe para Alta/Ultra em GPUs fortes,
 desliga o ajuste automático e fica salvo. `?low` força Baixa, `?ultra` força Ultra.

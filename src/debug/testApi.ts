@@ -11,7 +11,34 @@ import { sfx } from '../audio/sfx';
  * `advance()`, which makes captures deterministic.
  */
 export function installTestApi(game: Game): void {
+  const rumbles: Record<string, number>[] = [];
   const api = {
+    /** Every vibration effect the fake controller was asked to play. */
+    rumbles,
+    /**
+     * Plug in a fake standard gamepad: axes [lx, ly, rx, ry], `buttons` = indices held down.
+     * `null` unplugs it.
+     */
+    pad(state: { axes?: number[]; buttons?: number[] } | null): void {
+      if (!state) {
+        game.pad.provider = null;
+        return;
+      }
+      const held = new Set(state.buttons ?? []);
+      const fake = {
+        connected: true,
+        mapping: 'standard',
+        axes: state.axes ?? [0, 0, 0, 0],
+        buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: held.has(i), value: held.has(i) ? 1 : 0 })),
+        vibrationActuator: {
+          playEffect: (_type: string, params: Record<string, number>) => {
+            rumbles.push(params);
+            return Promise.resolve();
+          },
+        },
+      };
+      game.pad.provider = () => fake;
+    },
     game,
     ready: true,
     advance(seconds: number, fps = 60): void {

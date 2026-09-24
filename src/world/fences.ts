@@ -35,9 +35,24 @@ interface Piece {
   color: number;
 }
 
-/** One breakable span of fence between two posts. */
+const _m = new THREE.Matrix4();
+const _q = new THREE.Quaternion();
+const _qx = new THREE.Quaternion();
+const _p = new THREE.Vector3();
+const _one = new THREE.Vector3(1, 1, 1);
+const _ax = new THREE.Vector3(1, 0, 0);
+const _ay = new THREE.Vector3(0, 1, 0);
+
+/**
+ * One breakable span of fence between two posts. Its geometry lives in the run's BatchedMesh
+ * (one draw call for the whole run); the segment just moves / hides its own instance.
+ */
 export class FenceSegment implements HitReceiver, Updatable {
-  readonly mesh: THREE.Mesh;
+  /** Segment geometry in its local frame (origin at the first post, +X along the fence). */
+  readonly geometry: THREE.BufferGeometry;
+  private batch: THREE.BatchedMesh | null = null;
+  private instance = -1;
+  private lastTilt = NaN;
   readonly collider: StaticCollider;
   hp: number;
   private maxHp: number;
@@ -85,16 +100,31 @@ export class FenceSegment implements HitReceiver, Updatable {
       }
       this.hp = 3;
     }
-    this.mesh = new THREE.Mesh(g.build(), vcToon());
-    this.mesh.castShadow = true;
-    this.mesh.receiveShadow = true;
-    this.mesh.position.set(a[0], 0, a[1]);
-    this.mesh.rotation.y = this.angle;
+    this.geometry = g.build();
     const mx = (a[0] + b[0]) / 2;
     const mz = (a[1] + b[1]) / 2;
     this.collider = StaticCollider.box(mx, mz, L / 2, kind === 'picket' ? 0.08 : 0.09, kind === 'picket' ? 1.0 : 0.95, this.angle, 'wood', this);
     this.collider.climbable = true;
     this.maxHp = this.hp;
+  }
+
+  /** Called by the FenceRun once the batch exists. */
+  attach(batch: THREE.BatchedMesh, instance: number): void {
+    this.batch = batch;
+    this.instance = instance;
+    this.place(0);
+  }
+
+  private place(tilt: number): void {
+    if (!this.batch || tilt === this.lastTilt) return;
+    this.lastTilt = tilt;
+    _q.setFromAxisAngle(_ay, this.angle).multiply(_qx.setFromAxisAngle(_ax, tilt));
+    _m.compose(_p.set(this.a[0], 0, this.a[1]), _q, _one);
+    this.batch.setMatrixAt(this.instance, _m);
+  }
+
+  private setVisible(v: boolean): void {
+    if (this.batch) this.batch.setVisibleAt(this.instance, v);
   }
 
   /** Fence normal (horizontal, unit). */
@@ -132,7 +162,7 @@ export class FenceSegment implements HitReceiver, Updatable {
     if (!this.broken) return;
     this.broken = false;
     this.hp = this.maxHp;
-    this.mesh.visible = true;
+    this.setVisible(true);
     this.collider.enabled = true;
     this.wobble.value = 0;
     this.wake(4);
@@ -196,7 +226,7 @@ export class FenceSegment implements HitReceiver, Updatable {
   break(dir: THREE.Vector3, speed: number): void {
     if (this.broken) return;
     this.broken = true;
-    this.mesh.visible = false;
+    this.setVisible(false);
     this.collider.enabled = false;
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, this.angle, 0));
     const flat = dir.clone().setY(0).normalize();
@@ -222,8 +252,8 @@ export class FenceSegment implements HitReceiver, Updatable {
   update(dt: number): void {
     if (this.broken) return;
     this.wobble.update(dt);
-    this.mesh.rotation.set(0, this.angle, 0);
-    this.mesh.rotateX(this.wobble.value * 0.06);
+    const tilt = Math.abs(this.wobble.value) < 1e-3 ? 0 : this.wobble.value * 0.06;
+    this.place(tilt);
   }
 }
 
@@ -257,7 +287,6 @@ export class FenceRun {
         const b: Pt = [ax + (bx - ax) * t1, az + (bz - az) * t1];
         const seg = new FenceSegment(ctx, a, b, kind, seed * 100 + k++);
         this.segments.push(seg);
-        this.group.add(seg.mesh);
         addPost(a[0], a[1]);
       }
     }
@@ -267,5 +296,18 @@ export class FenceRun {
     pm.castShadow = true;
     pm.receiveShadow = true;
     this.group.add(pm);
+    // all spans of the run in one batched draw call
+    let verts = 0;
+    for (const s of this.segments) verts += s.geometry.getAttribute('position').count;
+    const batch = new THREE.BatchedMesh(this.segments.length, verts, 0, vcToon());
+    batch.castShadow = true;
+    batch.receiveShadow = true;
+    for (const s of this.segments) {
+      const id = batch.addInstance(batch.addGeometry(s.geometry));
+      s.attach(batch, id);
+    }
+    batch.computeBoundingSphere();
+    batch.computeBoundingBox();
+    this.group.add(batch);
   }
 }

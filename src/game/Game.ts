@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clamp } from '../core/math';
 import { Input } from '../core/input';
+import { Pad, PAD } from '../core/gamepad';
 import { rng } from '../core/rng';
 import { CameraRig } from '../render/cameraRig';
 import { Lighting } from '../render/lighting';
@@ -49,6 +50,9 @@ export class Game implements GameCtx {
   readonly pipeline: RenderPipeline;
   readonly lighting: Lighting;
   readonly input: Input;
+  readonly pad = new Pad();
+  /** Twin-stick aim direction (world XZ), kept when the right stick is let go. */
+  private padAim = new THREE.Vector3(0, 0, 1);
   readonly hud: Hud;
   readonly overlay: Overlay;
   time = 0;
@@ -132,6 +136,12 @@ export class Game implements GameCtx {
     this.dayCycle = new DayCycle(this.lighting, this.pipeline);
     this.scene.add(this.lantern);
     this.input = new Input(this.pipeline.domElement);
+    // any click or key (not just the title button) wakes the audio up
+    window.addEventListener('pointerdown', () => sfx.unlock());
+    window.addEventListener('keydown', () => sfx.unlock());
+    this.pad.onConnect = () => {
+      if (!this.test) this.hud.toast('Controle conectado 🎮  RT atira · A rola · B chuta · LT dinamite', 3.5);
+    };
     this.hud = new Hud(document.body);
     this.overlay = new Overlay(document.body);
     this.overlay.onAction = (mode) => this.onOverlay(mode);
@@ -284,7 +294,7 @@ export class Game implements GameCtx {
       this.hud.setPrompt(null);
       return;
     }
-    if (this.input.down('KeyC')) {
+    if (this.input.down('KeyC') || this.pad.down(PAD.UP)) {
       this.repairT += dt;
       this.repairSfxT -= dt;
       if (this.repairSfxT <= 0) {
@@ -300,7 +310,7 @@ export class Game implements GameCtx {
       }
     } else {
       this.repairT = 0;
-      this.hud.setPrompt('Segure C para consertar a cerca');
+      this.hud.setPrompt(this.pad.active ? 'Segure ↑ (direcional) para consertar a cerca' : 'Segure C para consertar a cerca');
     }
   }
 
@@ -424,6 +434,8 @@ export class Game implements GameCtx {
 
   shake(trauma: number): void {
     this.cam.addTrauma(trauma);
+    // every screen shake is also felt in the hands
+    this.pad.rumble(Math.min(1, trauma * 0.9), Math.min(1, trauma * 1.2), 70 + trauma * 280);
   }
 
   add(u: Updatable): void {
@@ -568,12 +580,16 @@ export class Game implements GameCtx {
 
   private readInput(): PlayerInput {
     const inp = this.input;
+    const pad = this.pad;
     let mx = 0;
     let mz = 0;
     if (inp.down('KeyW') || inp.down('ArrowUp')) mz += 1;
     if (inp.down('KeyS') || inp.down('ArrowDown')) mz -= 1;
     if (inp.down('KeyD') || inp.down('ArrowRight')) mx += 1;
     if (inp.down('KeyA') || inp.down('ArrowLeft')) mx -= 1;
+    // left stick (analog: walking speed follows the tilt)
+    mx += pad.lx;
+    mz -= pad.ly;
     const r = this.cam.right;
     const f = this.cam.forward;
     const wx = r.x * mx + f.x * mz;
@@ -581,26 +597,30 @@ export class Game implements GameCtx {
     let switchTo: WeaponId | null = null;
     if (inp.pressed('Digit1')) switchTo = 'pistol';
     if (inp.pressed('Digit2')) switchTo = 'shotgun';
-    if (inp.pressed('Tab')) switchTo = this.player.weapon.id === 'pistol' ? 'shotgun' : 'pistol';
+    if (inp.pressed('Tab') || pad.pressed(PAD.Y)) switchTo = this.player.weapon.id === 'pistol' ? 'shotgun' : 'pistol';
     return {
       moveX: wx,
       moveZ: wz,
       aim: this.aimPoint,
-      fire: inp.button(0),
-      firePressed: inp.buttonPressed(0),
-      reload: inp.pressed('KeyR'),
-      dodge: inp.pressed('Space') || inp.pressed('ShiftLeft'),
+      fire: inp.button(0) || pad.down(PAD.RT),
+      firePressed: inp.buttonPressed(0) || pad.pressed(PAD.RT),
+      reload: inp.pressed('KeyR') || pad.pressed(PAD.X),
+      dodge: inp.pressed('Space') || inp.pressed('ShiftLeft') || pad.pressed(PAD.A),
       switchTo,
-      kick: inp.pressed('KeyF') || inp.pressed('KeyV'),
-      throwHeld: inp.down('KeyG'),
-      throwPressed: inp.pressed('KeyG'),
-      throwReleased: inp.released('KeyG'),
+      kick: inp.pressed('KeyF') || inp.pressed('KeyV') || pad.pressed(PAD.B),
+      throwHeld: inp.down('KeyG') || pad.down(PAD.LT),
+      throwPressed: inp.pressed('KeyG') || pad.pressed(PAD.LT),
+      throwReleased: inp.released('KeyG') || pad.released(PAD.LT),
     };
   }
 
   private computeAim(): void {
     if (this.aimOverride) {
       this.aimPoint.copy(this.aimOverride);
+      return;
+    }
+    if (this.pad.active) {
+      this.computePadAim();
       return;
     }
     const m = this.input.mouse;
@@ -620,8 +640,57 @@ export class Game implements GameCtx {
     if (p) this.aimPoint.copy(p);
   }
 
+  /**
+   * Twin-stick aim: the right stick points, a gentle assist snaps to the zombie closest to that
+   * direction (within ~12°), otherwise aim a few meters out at gun height.
+   */
+  private computePadAim(): void {
+    const p = this.player.pos;
+    const pad = this.pad;
+    if (Math.hypot(pad.rx, pad.ry) > 0.25) {
+      const r = this.cam.right;
+      const f = this.cam.forward;
+      this.padAim.set(r.x * pad.rx - f.x * pad.ry, 0, r.z * pad.rx - f.z * pad.ry).normalize();
+    } else if (Math.hypot(pad.lx, pad.ly) > 0.5 && !pad.down(PAD.RT)) {
+      // no aim input: face where you walk
+      const r = this.cam.right;
+      const f = this.cam.forward;
+      this.padAim.set(r.x * pad.lx - f.x * pad.ly, 0, r.z * pad.lx - f.z * pad.ly).normalize();
+    }
+    const gunY = p.y + 0.72;
+    let best: Zombie | null = null;
+    let bestA = 0.21;
+    for (const z of this.zombies) {
+      if (!z.alive || z.ragdoll) continue;
+      const dx = z.pos.x - p.x;
+      const dz = z.pos.z - p.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 0.8 || d > 17) continue;
+      const a = Math.acos(Math.max(-1, Math.min(1, (dx * this.padAim.x + dz * this.padAim.z) / d)));
+      if (a < bestA) {
+        bestA = a;
+        best = z;
+      }
+    }
+    if (best) {
+      const y = best.crawl ? p.y + 0.3 : Math.min(gunY + 0.2, best.pos.y + 0.75 * best.model.s);
+      this.aimPoint.set(best.pos.x, y, best.pos.z);
+    } else this.aimPoint.set(p.x + this.padAim.x * 7, gunY, p.z + this.padAim.z * 7);
+  }
+
   tick(realDt: number): void {
     const inp = this.input;
+    const pad = this.pad;
+    pad.poll();
+    if (inp.mouseMoved || inp.anyKeyPressed || inp.buttonPressed(0)) pad.active = false;
+    // menus: A or Start confirms whatever the overlay offers
+    if ((pad.pressed(PAD.A) || pad.pressed(PAD.START)) && (this.state === 'title' || (this.state === 'dead' && this.overlay.mode === 'dead'))) {
+      this.onOverlay(this.state === 'title' ? 'title' : 'dead');
+    } else if (pad.pressed(PAD.START) && (this.state === 'playing' || this.state === 'paused')) {
+      if (this.state === 'playing') this.pause();
+      else this.onOverlay('pause');
+    }
+    if (pad.pressed(PAD.BACK)) this.cycleQuality();
     sfx.soundtrack?.update(realDt);
     if (inp.pressed('KeyM')) this.hud.toast(sfx.toggleMute() ? 'Som desligado' : 'Som ligado', 1.2);
     if (inp.pressed('Escape') && (this.state === 'playing' || this.state === 'paused')) {
@@ -632,7 +701,7 @@ export class Game implements GameCtx {
       inp.endFrame();
       return;
     }
-    if (inp.pressed('KeyN') && this.state === 'playing') this.spawnWave();
+    if ((inp.pressed('KeyN') || pad.pressed(PAD.DOWN)) && this.state === 'playing') this.spawnWave();
     if (inp.pressed('KeyP')) this.cycleQuality();
     if (inp.pressed('KeyI')) this.showFps = !this.showFps;
 
@@ -779,9 +848,10 @@ export class Game implements GameCtx {
       look = null;
     }
     let rot = 0;
-    if (inp.down('KeyQ')) rot -= 1;
-    if (inp.down('KeyE')) rot += 1;
-    this.cam.update(follow, look, rot, inp.orbitDX, inp.wheel, realDt);
+    if (inp.down('KeyQ') || pad.down(PAD.LB)) rot -= 1;
+    if (inp.down('KeyE') || pad.down(PAD.RB)) rot += 1;
+    const zoom = inp.wheel + (pad.pressed(PAD.RIGHT) ? 1 : 0) - (pad.pressed(PAD.LEFT) ? 1 : 0);
+    this.cam.update(follow, look, rot, inp.orbitDX, zoom, realDt);
     this.lighting.update(this.cam.target);
     GLOBAL_UNIFORMS.uSunView.value.copy(this.lighting.sunDir).transformDirection(this.cam.camera.matrixWorldInverse);
     sfx.setListener(this.cam.target, this.cam.right);
@@ -805,8 +875,14 @@ export class Game implements GameCtx {
     this.flashT = Math.max(0, this.flashT - realDt);
     this.pipeline.grade.uniforms.uHurt.value = this.hurtV;
     this.pipeline.grade.uniforms.uFlash.value = this.flashT > 0 ? (this.flashT / 0.12) * 0.12 : 0;
-    const mx = inp.mouse.x;
-    const my = inp.mouse.y;
+    let mx = inp.mouse.x;
+    let my = inp.mouse.y;
+    if (pad.active) {
+      // crosshair sits on the gamepad aim point
+      const v = this.aimPoint.clone().project(this.cam.camera);
+      mx = (v.x * 0.5 + 0.5) * window.innerWidth;
+      my = (-v.y * 0.5 + 0.5) * window.innerHeight;
+    }
     this.hud.update(realDt, this.player, mx, my);
     this.hud.setFps(this.showFps ? `${Math.round(this.fps)} fps · ${QUALITY_NAMES[this.pipeline.quality]}` : null);
     inp.endFrame();

@@ -361,22 +361,34 @@ export function createGrass(): THREE.Group {
   }
   const m4 = new THREE.Matrix4();
   const c = new THREE.Color();
+  // square chunks, each its own instanced mesh, so whatever is off screen isn't drawn at all
+  const CHUNK = 16;
   variants.forEach((geo, vi) => {
-    const list = pts[vi];
-    const mesh = new THREE.InstancedMesh(geo, mat, list.length);
-    list.forEach(([x, z, n], i) => {
-      const s = 0.75 + n * 0.6 + r.next() * 0.25;
-      m4.copy(compose(x, 0, z, 0, r.angle(), 0, s, s * (0.85 + r.next() * 0.35), s));
-      mesh.setMatrixAt(i, m4);
-      c.setHSL(0.22 + r.spread(0.03), 0.4 + r.spread(0.08), 0.66 + r.spread(0.06));
-      c.lerp(new THREE.Color(1, 1, 1), 0.62);
-      mesh.setColorAt(i, c);
-    });
-    mesh.receiveShadow = true;
-    mesh.frustumCulled = false;
-    // instances are in random order, so drawing fewer thins the grass evenly (quality LOD)
-    mesh.userData.lodCount = list.length;
-    group.add(mesh);
+    const chunks = new Map<string, [number, number, number][]>();
+    for (const p of pts[vi]) {
+      const key = `${Math.floor(p[0] / CHUNK)},${Math.floor(p[1] / CHUNK)}`;
+      let list = chunks.get(key);
+      if (!list) chunks.set(key, (list = []));
+      list.push(p);
+    }
+    for (const list of chunks.values()) {
+      const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+      list.forEach(([x, z, n], i) => {
+        const s = 0.75 + n * 0.6 + r.next() * 0.25;
+        m4.copy(compose(x, 0, z, 0, r.angle(), 0, s, s * (0.85 + r.next() * 0.35), s));
+        mesh.setMatrixAt(i, m4);
+        c.setHSL(0.22 + r.spread(0.03), 0.4 + r.spread(0.08), 0.66 + r.spread(0.06));
+        c.lerp(new THREE.Color(1, 1, 1), 0.62);
+        mesh.setColorAt(i, c);
+      });
+      mesh.receiveShadow = true;
+      // bounds from the instances, padded for wind sway and people brushing through
+      mesh.computeBoundingSphere();
+      if (mesh.boundingSphere) mesh.boundingSphere.radius += 0.8;
+      // instances are in random order, so drawing fewer thins the grass evenly (quality LOD)
+      mesh.userData.lodCount = list.length;
+      group.add(mesh);
+    }
   });
   return group;
 }

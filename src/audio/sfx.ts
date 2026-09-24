@@ -96,6 +96,7 @@ export class Sfx {
       this.soundtrack.play();
     }
     if (this.ctx.state !== 'running') void this.ctx.resume();
+    this.soundtrack?.play();
   }
 
   toggleMute(): boolean {

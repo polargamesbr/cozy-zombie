@@ -9,6 +9,8 @@ export class Input {
   wheel = 0;
   /** Accumulated mouse movement while the orbit button (right/middle) is held. */
   orbitDX = 0;
+  /** The mouse moved this frame (switches aiming back from a gamepad). */
+  mouseMoved = false;
   enabled = true;
 
   constructor(private el: HTMLElement) {
@@ -29,6 +31,7 @@ export class Input {
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('pointermove', (e) => {
       this.setMouse(e.clientX, e.clientY);
+      if (Math.abs(e.movementX) + Math.abs(e.movementY) > 2) this.mouseMoved = true;
       if (this.buttons.has(2) || this.buttons.has(1)) this.orbitDX += e.movementX;
     });
     el.addEventListener('pointerdown', (e) => {
@@ -106,7 +109,13 @@ export class Input {
     this.buttons.delete(b);
   }
 
+  /** Any keyboard key went down this frame. */
+  get anyKeyPressed(): boolean {
+    return this.pressedKeys.size > 0;
+  }
+
   endFrame(): void {
+    this.mouseMoved = false;
     this.pressedKeys.clear();
     this.releasedKeys.clear();
     this.pressedButtons.clear();

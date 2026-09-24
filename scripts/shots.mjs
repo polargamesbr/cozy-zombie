@@ -527,6 +527,40 @@ const scenarios = {
     await shot('repair-3');
     console.log(JSON.stringify(await g(() => __game.game.farm.fenceSegments[4].broken)));
   },
+  async gamepad() {
+    // twin-stick: walk with the left stick, aim with the right (assist snaps to the zombie), RT fires
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.clearAim();
+      __game.teleport(-2, -3, 0);
+      __game.spawn('shambler', 3.5, -2.2);
+      __game.spawn('runner', 1.5, -6.5);
+      __game.freeze(true);
+      __game.camera({ yaw: -0.3, zoom: 15 });
+      __game.weapon('pistol');
+      __game.advance(0.4);
+      // right stick: screen-right and a bit up
+      __game.pad({ axes: [0.35, 0, 0.95, -0.15] });
+      __game.advance(0.5);
+    });
+    await shot('gamepad-1');
+    console.log(JSON.stringify(await g(() => ({ aim: __game.game.aimPoint, active: __game.game.pad.active }))));
+    await g(() => {
+      for (let i = 0; i < 4; i++) {
+        __game.pad({ axes: [0, 0, 0.95, -0.15], buttons: [7] });
+        __game.advance(0.05);
+        __game.pad({ axes: [0, 0, 0.95, -0.15] });
+        __game.advance(0.15);
+      }
+      __game.pad({ axes: [0, 0, 0, 0], buttons: [1] });
+      __game.advance(0.05);
+      __game.pad({ axes: [0, 0, 0, 0] });
+      __game.advance(0.5);
+    });
+    await shot('gamepad-2');
+    console.log(JSON.stringify(await g(() => ({ state: __game.state(), rumbles: __game.rumbles.length, first: __game.rumbles[0] }))));
+  },
   async closeup() {
     await g(() => {
       __game.freeze(true);

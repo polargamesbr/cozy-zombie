@@ -37,12 +37,20 @@ export class Soundtrack {
     this.onFail();
   }
 
-  /** Call from a user gesture. */
+  get playing(): boolean {
+    return this.started && !this.el.paused;
+  }
+
+  /** Call from a user gesture. Blocked autoplay just waits for the next gesture. */
   play(): void {
-    if (this.failed) return;
+    if (this.failed || this.playing) return;
     this.started = true;
     const p = this.el.play();
-    if (p) p.catch(() => this.fail());
+    if (p)
+      p.catch((e: unknown) => {
+        if ((e as { name?: string })?.name === 'NotAllowedError') this.started = false;
+        else this.fail();
+      });
   }
 
   set muted(m: boolean) {

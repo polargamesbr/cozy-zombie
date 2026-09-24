@@ -139,3 +139,10 @@ marcador de acerto e anel de recarga.
 | C (segurar) | consertar a cerca quebrada ao lado |
 | P | qualidade gráfica (Ultra / Alta / Média / Baixa) |
 | I | mostrar FPS |
+
+**Controle** (mapeamento padrão): analógico esquerdo anda (velocidade proporcional), direito
+mira (com uma leve mira assistida que gruda no zumbi mais próximo da direção, ~12°); RT atira,
+LT segura/solta a dinamite, A rola (e confirma menus), B chuta, X recarrega, Y troca de arma,
+LB/RB giram a câmera, direcional ←/→ zoom, ↑ (segurar) conserta cerca, ↓ chama a horda, Start
+pausa, Select troca a qualidade. Toda tremida de tela também vibra o controle (tiros,
+explosões, dano, chute), proporcional ao "trauma".

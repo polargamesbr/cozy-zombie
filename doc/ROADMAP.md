@@ -44,9 +44,15 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
    - [x] Zumbis que pulam/derrubam cercas (pulo desajeitado; brutos e rastejantes quebram), horda saindo do celeiro com as portas voando (a cada 3 hordas), rastejantes de nascença
    - [x] Um dia na fazenda: tarde → pôr do sol → noite → amanhecer (cada horda avança meio período), hordas automáticas entre fases, consertar cercas (segurar C)
 6. **Técnico**
-   - [ ] 60 fps estáveis: merge de cercas/props, LOD da grama, opções de qualidade, contador de FPS
-     (já feito: 4 níveis de qualidade com ajuste automático, densidade da grama por nível, FPS com `I`)
-   - [ ] Suporte a controle com vibração
+   - [x] 60 fps estáveis: cercas em `BatchedMesh` por trecho, janelas mescladas por prédio, grama em blocos com frustum culling + densidade por nível, 4 níveis de qualidade (padrão Média, ajuste automático), FPS com `I` — draw calls −8 a −13%
+   - [x] Suporte a controle com vibração (twin-stick, mira assistida leve, toda tremida de tela vibra o controle)
+
+## Próximos passos (v0.3, sugestão)
+
+- Props dinâmicos em lote (BatchedMesh por material) e árvores/pássaros instanciados
+- Pré-compilar shaders (`compileAsync`) numa tela de carregamento para não engasgar no começo
+- Arma corpo a corpo (pá), upgrades simples entre hordas, galinhas fugindo
+- Opções num menu (volume da música, vibração, sensibilidade da mira assistida)
 
 ## Backlog anterior
 
@@ -56,7 +62,7 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
    - [ ] Pegadas/grama amassada temporária por onde passam corpos
    - [ ] Melhorar leitura dos zumbis no meio da grama alta (contorno mais forte à distância)
 2. **Feel**
-   - [ ] Rumble/vibração em gamepad + suporte a controle
+   - [x] Rumble/vibração em gamepad + suporte a controle
    - [x] Mais variações de reação de acerto (braço arrancado com espingarda)
    - [x] Corpos boiando no lago (afundar parcialmente + respingos)
    - [ ] Latas e cartuchos chutáveis pelo jogador
@@ -69,6 +75,6 @@ Estado atual e próximos passos. Cada iteração deve manter o jogo jogável, co
    - [ ] Mais tipos de zumbi (espantalho zumbi, galinha zumbi?)
    - [ ] Progressão curta entre hordas (upgrades simples)
 5. **Técnico**
-   - [ ] Mesclar segmentos de cerca/props estáticos para reduzir draw calls
+   - [x] Mesclar segmentos de cerca para reduzir draw calls (props dinâmicos ainda separados)
    - [x] Opção de qualidade (sombras/MSAA/bloom) e contador de FPS
    - [ ] Deploy automático (GitHub Pages)
