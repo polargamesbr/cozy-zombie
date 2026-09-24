@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { makeImpulseResponse } from './dsp';
 import { Music } from './music';
+import { Soundtrack } from './soundtrack';
 
 interface OutOpts {
   /** reverb send (0..1) */
@@ -31,6 +32,8 @@ export class Sfx {
   private right = new THREE.Vector3(1, 0, 0);
   private analyser: AnalyserNode | null = null;
   music: Music | null = null;
+  /** "Harvest Hush" (falls back to the procedural music if it can't be played). */
+  soundtrack: Soundtrack | null = null;
   muted = false;
   volume = 0.8;
   /** Big flat surfaces that throw gunshots back at you. */
@@ -86,13 +89,18 @@ export class Sfx {
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
       this.startAmbience();
       this.music = new Music(ctx, this.master, this.noiseBuf);
-      this.music.start();
+      // the recorded track is the soundtrack; the procedural score only plays stingers
+      // (and takes over completely if the file can't be played)
+      this.soundtrack = new Soundtrack('music/harvest-hush.mp3', () => this.music?.start());
+      this.soundtrack.muted = this.muted;
+      this.soundtrack.play();
     }
     if (this.ctx.state !== 'running') void this.ctx.resume();
   }
 
   toggleMute(): boolean {
     this.muted = !this.muted;
+    if (this.soundtrack) this.soundtrack.muted = this.muted;
     if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume, this.ctx.currentTime, 0.05);
     return this.muted;
   }

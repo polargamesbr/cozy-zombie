@@ -65,6 +65,12 @@ const scenarios = {
     await g(() => __game.audio.unlock());
     await page.waitForTimeout(800);
     console.log('audio state', JSON.stringify(await g(() => __game.audio.state())));
+    // the soundtrack keeps its own clock: tick a few real frames so its volume fades in
+    for (let i = 0; i < 20; i++) {
+      await g(() => __game.advance(0.1, 10));
+      await page.waitForTimeout(50);
+    }
+    console.log('soundtrack', JSON.stringify(await g(() => __game.audio.state().track)));
     const quiet = await g(() => __game.audio.level());
     await g(() => __game.audio.shots());
     await page.waitForTimeout(120);

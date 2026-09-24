@@ -37,6 +37,8 @@ export interface GameOptions {
 }
 
 const QUALITY_KEY = 'cozy-zombie-quality';
+/** Last tier the auto-adjust settled on (next launch starts there, still adjusting). */
+const QUALITY_AUTO_KEY = 'cozy-zombie-quality-auto';
 
 export class Game implements GameCtx {
   readonly scene = new THREE.Scene();
@@ -109,15 +111,19 @@ export class Game implements GameCtx {
     this.pipeline = new RenderPipeline(container, this.scene, this.cam.camera, { preserveDrawingBuffer: this.test, lowQuality: !!opts.low });
     this.lighting = new Lighting(this.scene);
     this.pipeline.enableAtmosphere(this.lighting.sun);
-    let q: Quality = opts.low ? 3 : opts.ultra ? 0 : 1;
-    if (this.test) this.autoQuality = false;
-    else if (!opts.low && !opts.ultra) {
+    // default to Média: smooth almost everywhere; P goes up to Alta/Ultra on strong GPUs
+    let q: Quality = opts.low ? 3 : opts.ultra ? 0 : 2;
+    if (this.test) {
+      this.autoQuality = false;
+      if (!opts.low && !opts.ultra) q = 1;
+    } else if (!opts.low && !opts.ultra) {
       try {
         const saved = localStorage.getItem(QUALITY_KEY);
+        const auto = localStorage.getItem(QUALITY_AUTO_KEY);
         if (saved !== null && /^[0-3]$/.test(saved)) {
           q = Number(saved) as Quality;
           this.autoQuality = false;
-        }
+        } else if (auto !== null && /^[0-3]$/.test(auto)) q = Number(auto) as Quality;
       } catch {
         // storage blocked: just use the default
       }
@@ -176,6 +182,7 @@ export class Game implements GameCtx {
     ];
     this.player.onDeath = () => {
       sfx.music?.stinger('death');
+      sfx.soundtrack?.setDown(true);
       this.state = 'dead';
       this.deadT = 0;
     };
@@ -311,6 +318,11 @@ export class Game implements GameCtx {
     if (this.autoQuality && this.perfCool <= 0 && this.fps < 48 && q < 3 && this.state !== 'paused') {
       this.applyQuality((q + 1) as Quality);
       this.perfCool = 4;
+      try {
+        localStorage.setItem(QUALITY_AUTO_KEY, String(q + 1));
+      } catch {
+        // not persisted
+      }
       this.hud.toast(`Qualidade ${QUALITY_NAMES[q + 1]} (auto) · P troca`, 2.2);
     }
   }
@@ -324,6 +336,7 @@ export class Game implements GameCtx {
   }
 
   reset(): void {
+    sfx.soundtrack?.setDown(false);
     this.disposeWorld();
     this.buildWorld();
     this.hitstopT = 0;
@@ -454,6 +467,7 @@ export class Game implements GameCtx {
     this.slowmo(0.16, 2.1);
     document.body.classList.add('killcam');
     sfx.slowmo();
+    sfx.soundtrack?.slowMo(2);
   }
 
   explode(pos: THREE.Vector3, power: number, source?: BlastSource): void {
@@ -512,6 +526,7 @@ export class Game implements GameCtx {
 
   private pause(): void {
     this.state = 'paused';
+    sfx.soundtrack?.setPaused(true);
     this.overlay.show('pause');
     document.body.classList.remove('playing');
   }
@@ -522,6 +537,7 @@ export class Game implements GameCtx {
       this.startPlaying();
       this.hud.toast('Que tarde bonita… 🌻', 2.5);
     } else if (mode === 'pause') {
+      sfx.soundtrack?.setPaused(false);
       this.state = 'playing';
       this.overlay.show('none');
       document.body.classList.add('playing');
@@ -606,6 +622,7 @@ export class Game implements GameCtx {
 
   tick(realDt: number): void {
     const inp = this.input;
+    sfx.soundtrack?.update(realDt);
     if (inp.pressed('KeyM')) this.hud.toast(sfx.toggleMute() ? 'Som desligado' : 'Som ligado', 1.2);
     if (inp.pressed('Escape') && (this.state === 'playing' || this.state === 'paused')) {
       if (this.state === 'playing') this.pause();
@@ -779,6 +796,7 @@ export class Game implements GameCtx {
         }
       }
       sfx.music.setIntensity(Math.min(1, danger));
+      sfx.soundtrack?.setIntensity(Math.min(1, danger));
     }
     // hurt / flash overlays
     if (this.player.hp < this.lastHp) this.hurtV = 1;

@@ -126,7 +126,12 @@ jogador (uma `PointLight` que existe sempre, para não recompilar shaders) e sol
   frente", para não confundir numa câmera de cima) → bus de efeitos. Em paralelo vai um envio
   para o reverb (convolver com IR gerada em `dsp.ts`) e, para sons altos, ecos atrasados pelo
   caminho extra até o celeiro/casa, panoramizados a partir da parede.
-- Música (`music.ts`): agendador com lookahead de 180 ms em semicolcheias a 86 BPM. Camada
+- Trilha principal (`soundtrack.ts`): *Harvest Hush* em `public/music/`, tocada num `<audio>` em
+  loop (fora do grafo WebAudio: sem decodificar minutos de áudio na memória e sem o silêncio de
+  `MediaElementSource` com outra origem). "Mixagem" por volume/velocidade do elemento: abaixa
+  um pouco em lutas pesadas, fica lenta e grave na kill-cam, quase some na morte e na pausa.
+  Se o arquivo falhar, a música procedural abaixo assume; senão ela só toca as vinhetas.
+- Música procedural (`music.ts`): agendador com lookahead de 180 ms em semicolcheias a 86 BPM. Camada
   calma (violão Karplus–Strong renderizado offline, kalimba, baixo, shaker) e camada tensa
   (Ré menor, baixo serrilhado pulsante, bumbo/caixa/chimbal, viradas). `Game` mede o perigo
   (zumbis alertas perto) e chama `setIntensity`; o modo troca na virada do compasso com histerese.
@@ -146,7 +151,8 @@ na grama e barulho; a fonte (`propane`/`dynamite`/`truck`) vira o rótulo de aba
 (≤1.75 / ≤1.25 / 1 / 0.75), MSAA, AO + névoa (só Ultra/Alta), bloom (até Média); `Game.applyQuality`
 também muda o shadow map (2048/1024) e a densidade da grama (instâncias em ordem aleatória:
 basta reduzir `count`). `Game.trackPerf` mede o FPS médio a cada ~2 s (ignorando engasgos
-> 250 ms) e desce um nível se ficar < 48; `P` escolhe manualmente (salvo em `localStorage`),
+> 250 ms) e desce um nível se ficar < 48; `P` escolhe manualmente (salvo em `localStorage`; o nível automático também é lembrado e o
+padrão inicial é Média),
 `I` mostra o FPS. O shader da grama usa transposta/escala em vez de `inverse(mat3)` por vértice.
 
 ## Testes e QA visual

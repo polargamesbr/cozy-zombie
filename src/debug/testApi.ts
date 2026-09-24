@@ -129,7 +129,14 @@ export function installTestApi(game: Game): void {
     audio: {
       unlock: () => sfx.unlock(),
       level: () => sfx.level(),
-      state: () => ({ ready: sfx.ready, mode: sfx.music?.currentMode ?? null }),
+      state: () => {
+        const st = sfx.soundtrack;
+        return {
+          ready: sfx.ready,
+          mode: sfx.music?.currentMode ?? null,
+          track: st ? { failed: st.failed, paused: st.el.paused, time: +st.el.currentTime.toFixed(2), volume: +st.el.volume.toFixed(2), rate: st.el.playbackRate, duration: +(st.el.duration || 0).toFixed(1) } : null,
+        };
+      },
       intensity: (v: number) => sfx.music?.setIntensity(v),
       shots: () => {
         const p = game.player.pos.clone();
