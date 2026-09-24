@@ -426,7 +426,32 @@ export class BlobSystem {
     emissive: boolean,
   ) {
     const geo = new THREE.IcosahedronGeometry(1, 2);
-    const mat: THREE.Material = emissive ? new THREE.MeshBasicMaterial({ color: 0xffffff }) : toonUnique(0xffffff);
+    let mat: THREE.Material;
+    if (emissive) {
+      // unlit but with a baked "light from above" and darker rim, so fireballs read as volumes
+      const m = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      m.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vFireN;\nvarying vec3 vFireV;')
+          .replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+             vFireN = normalize(mat3(modelMatrix * instanceMatrix) * normal);
+             vFireV = normalize(cameraPosition - (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz);`,
+          );
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vFireN;\nvarying vec3 vFireV;')
+          .replace(
+            '#include <color_fragment>',
+            `#include <color_fragment>
+             float up = clamp(vFireN.y * 0.5 + 0.5, 0.0, 1.0);
+             float rim = 1.0 - clamp(dot(normalize(vFireN), normalize(vFireV)), 0.0, 1.0);
+             diffuseColor.rgb *= mix(0.62, 1.12, up) * (1.0 - rim * rim * 0.35);`,
+          );
+      };
+      m.customProgramCacheKey = () => 'fireblob';
+      mat = m;
+    } else mat = toonUnique(0xffffff);
     this.mesh = new THREE.InstancedMesh(geo, mat, max);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.setColorAt(0, new THREE.Color(1, 1, 1));

@@ -209,9 +209,10 @@ export class Decals {
     if (opts.streakDir) {
       // orient the streak along the (projected) direction
       const rot = Math.atan2(-opts.streakDir.z, opts.streakDir.x);
-      this.splats.add(pos, normal, size, col, { cell: 12 + rng.int(0, 3), rot, stretch: 1.15, life: opts.life ?? 38 });
+      this.splats.add(pos, normal, size, col, { cell: 12 + rng.int(0, 3), rot, stretch: 1.15, life: opts.life ?? 28 });
     } else {
-      this.splats.add(pos, normal, size, col, { cell: rng.int(0, 11), life: opts.life ?? 45 });
+      // small droplets clean up quickly, big pools linger a bit longer
+      this.splats.add(pos, normal, size, col, { cell: rng.int(0, 11), life: opts.life ?? (size < 0.3 ? 18 : 36) });
     }
   }
 

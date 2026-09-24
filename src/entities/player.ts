@@ -164,7 +164,7 @@ export class Player implements GrassPusher {
       this.ctx.hitstop(0.06);
       this.ctx.fx.bloodBurst(this.pos.clone().setY(0.8), dir, 6, 0.6);
     }
-    if (this.hp <= 0) this.die(dir.clone().multiplyScalar(knock + 4));
+    if (this.hp <= 0) this.die(dir.clone().multiplyScalar(Math.min(6, knock * 0.45 + 2)));
   }
 
   private die(impulse: THREE.Vector3): void {
@@ -172,8 +172,8 @@ export class Player implements GrassPusher {
     this.body.alive = false;
     this.model.setFace('playerDead');
     this.model.setXray(false);
-    const vel = this.model.jointPositions().map(() => new THREE.Vector3(this.vel.x + impulse.x, 3 + impulse.y, this.vel.z + impulse.z));
-    vel[J.head].addScaledVector(impulse, 0.5);
+    const vel = this.model.jointPositions().map(() => new THREE.Vector3(this.vel.x * 0.3 + impulse.x, 2.2 + impulse.y, this.vel.z * 0.3 + impulse.z));
+    vel[J.head].addScaledVector(impulse, 0.4);
     const rd = this.model.createRagdoll(vel);
     this.ragdoll = rd;
     this.ctx.physics.addRagdoll(rd);

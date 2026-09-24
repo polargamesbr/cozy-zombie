@@ -47,6 +47,68 @@ const shot = async (name) => {
 };
 
 const scenarios = {
+  async boom2() {
+    // centered explosion with a survivor that gets knocked down and stands back up
+    await g(() => {
+      __game.godMode();
+      __game.clearZombies();
+      __game.teleport(3, 3, 0);
+      __game.spawn('shambler', 3.4, -3.4);
+      __game.spawn('runner', 1.2, -4.8);
+      __game.spawn('brute', 6.6, -5.6);
+      __game.freeze(true);
+      __game.camera({ yaw: -0.2, zoom: 17 });
+      __game.aim(3, -4);
+      __game.advance(0.5);
+      __game.explode(3, -4.4, 1);
+      __game.advance(0.03);
+    });
+    await shot('boom2-1');
+    await g(() => __game.advance(0.12));
+    await shot('boom2-2');
+    await g(() => __game.advance(0.35));
+    await shot('boom2-3');
+    await g(() => __game.advance(1.6));
+    await shot('boom2-4');
+    console.log(JSON.stringify(await g(() => __game.state())));
+    await g(() => __game.advance(1.4));
+    await shot('boom2-5');
+    console.log(JSON.stringify(await g(() => __game.state())));
+  },
+  async dodge() {
+    await g(() => {
+      __game.clearZombies();
+      __game.teleport(-2, -3, 1.6);
+      __game.camera({ yaw: -0.2, zoom: 12 });
+      __game.aim(4, -3);
+      __game.advance(0.4);
+      __game.key('KeyD', true);
+      __game.advance(0.2);
+      __game.key('Space');
+      __game.advance(0.1);
+    });
+    await shot('dodge-1');
+    await g(() => __game.advance(0.1));
+    await shot('dodge-2');
+    await g(() => { __game.release('KeyD'); __game.advance(0.4); });
+  },
+  async death() {
+    await g(() => {
+      __game.clearZombies();
+      __game.teleport(-2, -3, 1.6);
+      __game.game.player.hp = 1;
+      __game.spawn('brute', -0.8, -3, true);
+      __game.camera({ yaw: -0.2, zoom: 14 });
+      __game.aim(2, -3);
+      __game.advance(2.0);
+    });
+    await shot('death-1');
+    await g(() => __game.advance(1.2));
+    await shot('death-2');
+    await g(() => __game.advance(2.0));
+    await shot('death-3');
+    console.log(JSON.stringify(await g(() => __game.state())));
+  },
   async title() {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
     await page.waitForTimeout(6000);
